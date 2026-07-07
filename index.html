@@ -27,9 +27,20 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     padding: 24px;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; }
+  .wrap { max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0 0 4px; }
-  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .filtros {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 24px;
+  }
+  .filtro-campo { display: flex; flex-direction: column; gap: 4px; }
+  .filtro-campo label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .filtro-campo input, .filtro-campo select {
+    background: #10121a; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 10px; font-size: 13px;
+  }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .card {
     background: var(--card);
@@ -54,6 +65,7 @@
     margin-bottom: 8px;
     font-size: 13px;
   }
+  .alerta .data-alerta { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
   .alerta.CRITICO { border-color: var(--critico); }
   .alerta.ALTO { border-color: var(--alto); }
   .alerta.MEDIO { border-color: var(--medio); }
@@ -62,9 +74,9 @@
   .alerta.ALTO .nivel { color: var(--alto); }
   .alerta.MEDIO .nivel { color: var(--medio); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
-  tr:hover td { background: #1a1d28; }
+  tr.linha-descarte:hover td { background: #1a1d28; cursor: pointer; }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
   .tag.OPERACAO { background: rgba(231,76,60,0.15); color: var(--operacao); }
   .tag.ESTRUTURAL { background: rgba(52,152,219,0.15); color: var(--estrutural); }
@@ -74,9 +86,14 @@
   a:hover { text-decoration: underline; }
   .empty { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
   .table-wrap { overflow-x: auto; }
-  select {
-    background: var(--card); color: var(--text); border: 1px solid var(--border);
-    border-radius: 6px; padding: 6px 10px; font-size: 13px; margin-bottom: 12px;
+  .atividades-mini { font-size: 11px; color: var(--muted); }
+  .detalhe-row td { background: #10121a; padding: 16px; }
+  .detalhe-bloco { margin-bottom: 12px; }
+  .detalhe-bloco h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .detalhe-bloco p { margin: 0; font-size: 13px; white-space: pre-wrap; line-height: 1.5; }
+  button.link-like {
+    background: none; border: none; color: #6ea8fe; cursor: pointer; font-size: 12px;
+    padding: 0; text-decoration: underline;
   }
 </style>
 </head>
@@ -84,6 +101,27 @@
 <div class="wrap">
   <h1>Agente de Descartes — Auvo</h1>
   <div class="subtitle" id="subtitle">Carregando...</div>
+
+  <div class="filtros">
+    <div class="filtro-campo">
+      <label>De</label>
+      <input type="date" id="dataDe">
+    </div>
+    <div class="filtro-campo">
+      <label>Até</label>
+      <input type="date" id="dataAte">
+    </div>
+    <div class="filtro-campo">
+      <label>Categoria</label>
+      <select id="filtroCategoria">
+        <option value="">Todas</option>
+        <option value="OPERACAO">OPERACAO</option>
+        <option value="ESTRUTURAL">ESTRUTURAL</option>
+        <option value="QUALIDADE">QUALIDADE</option>
+        <option value="AUVOHUB">AUVOHUB</option>
+      </select>
+    </div>
+  </div>
 
   <div class="grid" id="cards"></div>
 
@@ -93,25 +131,18 @@
   </section>
 
   <section>
-    <h2>Alertas do dia</h2>
+    <h2>Alertas no periodo</h2>
     <div id="alertas"></div>
   </section>
 
   <section>
-    <h2>Descartes recentes</h2>
-    <select id="filtroCategoria">
-      <option value="">Todas as categorias</option>
-      <option value="OPERACAO">OPERACAO</option>
-      <option value="ESTRUTURAL">ESTRUTURAL</option>
-      <option value="QUALIDADE">QUALIDADE</option>
-      <option value="AUVOHUB">AUVOHUB</option>
-    </select>
+    <h2>Descartes no periodo</h2>
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Data</th><th>Empresa</th><th>SDR</th><th>Categoria</th>
-            <th>Motivo registrado</th><th>SLA (h)</th><th></th>
+            <th>Motivo registrado</th><th>Motivo de criação</th><th>Atividades</th><th>SLA (h)</th><th></th>
           </tr>
         </thead>
         <tbody id="tabelaDescartes"></tbody>
@@ -142,113 +173,181 @@ const CATEGORIA_COLOR = {
   AUVOHUB: "var(--auvohub)",
 };
 
-function renderCards(report) {
+function pct(count, total) {
+  if (!total) return 0;
+  return Math.round((count / total) * 1000) / 10;
+}
+
+function formatAtividades(detalhe) {
+  if (!detalhe) return "—";
+  const partes = [];
+  if (detalhe.calls) partes.push(`${detalhe.calls} call${detalhe.calls > 1 ? "s" : ""}`);
+  if (detalhe.notes) partes.push(`${detalhe.notes} nota${detalhe.notes > 1 ? "s" : ""}`);
+  if (detalhe.whatsapp) partes.push(`${detalhe.whatsapp} whats`);
+  if (detalhe.emails !== null && detalhe.emails > 0) partes.push(`${detalhe.emails} email${detalhe.emails > 1 ? "s" : ""}`);
+  if (detalhe.meetings) partes.push(`${detalhe.meetings} reuniao${detalhe.meetings > 1 ? "es" : ""}`);
+  if (detalhe.tasks) partes.push(`${detalhe.tasks} tarefa${detalhe.tasks > 1 ? "s" : ""}`);
+  return partes.length ? partes.join(", ") : "sem atividade";
+}
+
+function renderCards(rows) {
   const cards = document.getElementById("cards");
-  if (!report) {
-    cards.innerHTML = `<div class="card"><div class="label">Sem dados</div><div class="value">—</div></div>`;
-    return;
-  }
+  const total = rows.length;
+  const comSla = rows.filter((r) => r.sla_primeira_ligacao_horas !== null);
+  const dentroSla = comSla.filter((r) => r.dentro_sla_4h === true).length;
+  const slaMedia = comSla.length
+    ? Math.round((comSla.reduce((a, r) => a + r.sla_primeira_ligacao_horas, 0) / comSla.length) * 100) / 100
+    : null;
+  const flags = rows.filter((r) => r.flag_motivo_incorreto).length;
+
   cards.innerHTML = `
-    <div class="card"><div class="label">Total de descartes</div><div class="value">${report.total_descartes}</div></div>
-    <div class="card"><div class="label">SLA medio (horas uteis)</div><div class="value">${report.sla_media_horas ?? "—"}</div></div>
-    <div class="card"><div class="label">Dentro do SLA (4h)</div><div class="value">${report.sla_pct_dentro ?? 0}%</div></div>
-    <div class="card"><div class="label">Motivos incorretos</div><div class="value">${report.flags_motivo_incorreto ?? 0}</div></div>
+    <div class="card"><div class="label">Total de descartes</div><div class="value">${total}</div></div>
+    <div class="card"><div class="label">SLA medio (horas uteis)</div><div class="value">${slaMedia ?? "—"}</div></div>
+    <div class="card"><div class="label">Dentro do SLA (4h)</div><div class="value">${pct(dentroSla, comSla.length)}%</div></div>
+    <div class="card"><div class="label">Motivos incorretos</div><div class="value">${flags}</div></div>
   `;
 }
 
-function renderCategoriaBars(reportJson) {
+function renderCategoriaBars(rows) {
   const el = document.getElementById("categoriaBars");
-  const breakdown = reportJson?.breakdown_categoria ?? {};
-  const entries = Object.entries(breakdown);
+  const total = rows.length;
+  const categorias = ["OPERACAO", "ESTRUTURAL", "QUALIDADE", "AUVOHUB"];
+  const entries = categorias
+    .map((cat) => [cat, rows.filter((r) => r.classificacao === cat).length])
+    .filter(([, count]) => count > 0);
+
   if (entries.length === 0) {
-    el.innerHTML = `<div class="empty">Sem dados de categoria.</div>`;
+    el.innerHTML = `<div class="empty">Sem dados no periodo selecionado.</div>`;
     return;
   }
   el.innerHTML = entries
     .map(
-      ([cat, b]) => `
+      ([cat, count]) => `
       <div class="bar-row">
         <div class="bar-label">${cat}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${b.pct}%;background:${CATEGORIA_COLOR[cat] || "#888"}"></div></div>
-        <div class="bar-pct">${b.pct}%</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct(count, total)}%;background:${CATEGORIA_COLOR[cat] || "#888"}"></div></div>
+        <div class="bar-pct">${pct(count, total)}%</div>
       </div>`
     )
     .join("");
 }
 
-function renderAlertas(reportJson) {
+function renderAlertas(reports) {
   const el = document.getElementById("alertas");
-  const alertas = reportJson?.alertas ?? [];
-  if (alertas.length === 0) {
-    el.innerHTML = `<div class="empty">Nenhum alerta no dia mais recente.</div>`;
+  const comAlerta = reports.filter((r) => (r.report_json?.alertas ?? []).length > 0);
+  if (comAlerta.length === 0) {
+    el.innerHTML = `<div class="empty">Nenhum alerta no periodo selecionado.</div>`;
     return;
   }
-  el.innerHTML = alertas
-    .map(
-      (a) => `
+  el.innerHTML = comAlerta
+    .map((r) =>
+      r.report_json.alertas
+        .map(
+          (a) => `
       <div class="alerta ${a.nivel}">
+        <div class="data-alerta">${r.report_date}</div>
         <span class="nivel">${a.nivel}</span>${a.mensagem}
         <span style="color:var(--muted)"> — ${a.deals_afetados} deals</span>
       </div>`
+        )
+        .join("")
     )
     .join("");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str ?? "";
+  return div.innerHTML;
 }
 
 function renderTabela(rows) {
   const tbody = document.getElementById("tabelaDescartes");
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">Nenhum descarte encontrado.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
-    .map(
-      (r) => `
-      <tr>
+    .map((r, i) => `
+      <tr class="linha-descarte" data-idx="${i}">
         <td>${r.data_descarte ?? "—"}</td>
-        <td>${r.empresa ?? "—"}</td>
-        <td>${r.sdr ?? "—"}</td>
+        <td>${escapeHtml(r.empresa) || "—"}</td>
+        <td>${escapeHtml(r.sdr) || "—"}</td>
         <td><span class="tag ${r.classificacao}">${r.classificacao ?? "—"}</span></td>
-        <td>${r.motivo_registrado_micro ?? "—"}</td>
+        <td>${escapeHtml(r.motivo_registrado_micro) || "—"}</td>
+        <td>${escapeHtml(r.motivo_criacao_micro) || "—"}</td>
+        <td class="atividades-mini">${formatAtividades(r.atividades_detalhe)}</td>
         <td>${r.sla_primeira_ligacao_horas ?? "—"}</td>
         <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""}</td>
-      </tr>`
-    )
+      </tr>
+      <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
+        <td colspan="9">
+          <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
+          <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
+          ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
+          ${r.resumo_mensagens ? `<div class="detalhe-bloco"><h4>Resumo das mensagens (WhatsApp/Email)</h4><p>${escapeHtml(r.resumo_mensagens)}</p></div>` : ""}
+          ${r.transcricao_mensagens ? `<div class="detalhe-bloco"><h4>Transcricao de mensagens</h4><p>${escapeHtml(r.transcricao_mensagens)}</p></div>` : ""}
+          ${r.motivo_criacao_macro || r.fonte_primaria ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Motivo de criação: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}\nFonte primaria: ${escapeHtml(r.fonte_primaria) || "—"}</p></div>` : ""}
+        </td>
+      </tr>
+    `)
     .join("");
+
+  tbody.querySelectorAll("tr.linha-descarte").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const detalhe = document.getElementById(`detalhe-${tr.dataset.idx}`);
+      detalhe.style.display = detalhe.style.display === "none" ? "" : "none";
+    });
+  });
 }
 
-let allRows = [];
-
-function applyFiltro() {
-  const filtro = document.getElementById("filtroCategoria").value;
-  const filtered = filtro ? allRows.filter((r) => r.classificacao === filtro) : allRows;
-  renderTabela(filtered);
+function defaultDates() {
+  const hoje = new Date().toISOString().slice(0, 10);
+  return { de: "2026-07-01", ate: hoje };
 }
 
-async function main() {
+async function carregarDados() {
   const subtitle = document.getElementById("subtitle");
-  try {
-    const reports = await supabaseGet(
-      "daily_reports?select=*&order=report_date.desc&limit=1"
-    );
-    const latest = reports[0];
-    renderCards(latest);
-    renderCategoriaBars(latest?.report_json);
-    renderAlertas(latest?.report_json);
-    subtitle.textContent = latest
-      ? `Ultimo relatorio: ${latest.report_date}`
-      : "Nenhum relatorio gerado ainda.";
+  const de = document.getElementById("dataDe").value;
+  const ate = document.getElementById("dataAte").value;
+  const categoria = document.getElementById("filtroCategoria").value;
 
-    allRows = await supabaseGet(
-      "discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,sla_primeira_ligacao_horas,link_hubspot&order=data_descarte.desc&limit=200"
+  try {
+    const filtrosData = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
+    const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
+
+    const rows = await supabaseGet(
+      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,fonte_primaria,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosData, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
     );
-    applyFiltro();
+
+    const reports = await supabaseGet(
+      `daily_reports?select=report_date,report_json&${filtrosData.join("&")}&order=report_date.desc&limit=90`
+    );
+
+    renderCards(rows);
+    renderCategoriaBars(rows);
+    renderAlertas(reports);
+    renderTabela(rows);
+
+    subtitle.textContent = `${rows.length} descarte(s) entre ${de} e ${ate}`;
   } catch (err) {
     subtitle.textContent = `Erro ao carregar dados: ${err.message}`;
     console.error(err);
   }
 }
 
-document.getElementById("filtroCategoria").addEventListener("change", applyFiltro);
+function main() {
+  const { de, ate } = defaultDates();
+  document.getElementById("dataDe").value = de;
+  document.getElementById("dataAte").value = ate;
+
+  document.getElementById("dataDe").addEventListener("change", carregarDados);
+  document.getElementById("dataAte").addEventListener("change", carregarDados);
+  document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
+
+  carregarDados();
+}
+
 main();
 </script>
 </body>
