@@ -89,6 +89,10 @@
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
   tr.linha-descarte:hover td { background: #1a1d28; cursor: pointer; }
+  tr.mes-divider td {
+    background: #16233a; color: #6ea8fe; font-weight: 700; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.04em; padding: 10px;
+  }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
   .tag.OPERACAO { background: rgba(231,76,60,0.15); color: var(--operacao); }
   .tag.ESTRUTURAL { background: rgba(52,152,219,0.15); color: var(--estrutural); }
@@ -138,6 +142,13 @@
         <option value="AUVOHUB">AUVOHUB</option>
       </select>
     </div>
+    <div class="filtro-campo">
+      <label>Etapa</label>
+      <select id="filtroEtapa"></select>
+    </div>
+    <div class="filtro-campo">
+      <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
+    </div>
   </div>
 
   <div class="grid" id="cards"></div>
@@ -158,7 +169,7 @@
       <table>
         <thead>
           <tr>
-            <th>Data</th><th>Empresa</th><th>SDR</th><th>Categoria</th>
+            <th>Data</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
             <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
           </tr>
         </thead>
@@ -168,6 +179,7 @@
   </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const SUPABASE_URL = "https://exxqtkcmwzjypelyjpmo.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4eHF0a2Ntd3pqeXBlbHlqcG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzg4NzgsImV4cCI6MjA5NDcxNDg3OH0.tQIy8HBxuzR6gkwDPeD3PnAv-mt0hjhl18epYlEJ_9c";
@@ -299,18 +311,35 @@ function resumoPreview(r) {
   return texto.length > 90 ? texto.slice(0, 90) + "…" : texto;
 }
 
+const MES_NOMES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+function mesLabel(dataIso) {
+  if (!dataIso) return "";
+  const [ano, mes] = dataIso.split("-");
+  return `${MES_NOMES[Number(mes) - 1]} de ${ano}`;
+}
+
 function renderTabela(rows) {
   const tbody = document.getElementById("tabelaDescartes");
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
     return;
   }
-  tbody.innerHTML = rows
-    .map((r, i) => `
+
+  let mesAnterior = null;
+  const partes = [];
+  rows.forEach((r, i) => {
+    const mesAtual = (r.data_descarte ?? "").slice(0, 7);
+    if (mesAtual !== mesAnterior) {
+      partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r.data_descarte)}</td></tr>`);
+      mesAnterior = mesAtual;
+    }
+    partes.push(`
       <tr class="linha-descarte" data-idx="${i}">
         <td>${r.data_descarte ?? "—"}</td>
         <td>${escapeHtml(r.empresa) || "—"}</td>
         <td>${escapeHtml(r.sdr) || "—"}</td>
+        <td>${escapeHtml(r.etapa_descarte) || "—"}</td>
         <td><span class="tag ${r.classificacao}">${r.classificacao ?? "—"}</span></td>
         <td>${escapeHtml(r.motivo_registrado_micro) || "—"}</td>
         <td>${escapeHtml(r.motivo_criacao_micro) || "—"}</td>
@@ -320,17 +349,19 @@ function renderTabela(rows) {
         <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""} <span style="color:var(--muted)">▾ detalhes</span></td>
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
-        <td colspan="10">
+        <td colspan="11">
           <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
+          <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
           ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
           ${r.resumo_mensagens ? `<div class="detalhe-bloco"><h4>Resumo das mensagens (WhatsApp/Email)</h4><p>${escapeHtml(r.resumo_mensagens)}</p></div>` : ""}
           ${r.transcricao_mensagens ? `<div class="detalhe-bloco"><h4>Transcricao de mensagens</h4><p>${escapeHtml(r.transcricao_mensagens)}</p></div>` : ""}
           ${r.motivo_criacao_macro || r.campanha_origem ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Fonte: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}${r.campanha_origem ? `\nCampanha: ${escapeHtml(r.campanha_origem)}` : ""}</p></div>` : ""}
         </td>
       </tr>
-    `)
-    .join("");
+    `);
+  });
+  tbody.innerHTML = partes.join("");
 
   tbody.querySelectorAll("tr.linha-descarte").forEach((tr) => {
     tr.addEventListener("click", () => {
@@ -341,8 +372,20 @@ function renderTabela(rows) {
 }
 
 function defaultDates() {
-  const hoje = new Date().toISOString().slice(0, 10);
-  return { de: "2026-07-01", ate: hoje };
+  // Pedido do Pierre: visao aberta a partir de 01/07/2026, sem precisar ajustar o "Ate"
+  // conforme o tempo passa. 2030-12-31 funciona como "sem limite pratico" -- so mostra
+  // o que realmente existir no banco, a data e apenas o teto do filtro.
+  return { de: "2026-07-01", ate: "2030-12-31" };
+}
+
+let linhasAtuais = [];
+
+function popularFiltroEtapa() {
+  const select = document.getElementById("filtroEtapa");
+  const etapas = EQUIPES[equipeAtual];
+  select.innerHTML =
+    `<option value="">Todas (${equipeAtual})</option>` +
+    etapas.map((e) => `<option value="${e}">${e}</option>`).join("");
 }
 
 async function carregarDados() {
@@ -350,22 +393,24 @@ async function carregarDados() {
   const de = document.getElementById("dataDe").value;
   const ate = document.getElementById("dataAte").value;
   const categoria = document.getElementById("filtroCategoria").value;
+  const etapaEscolhida = document.getElementById("filtroEtapa").value;
 
   try {
     const filtrosDataDescartes = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
     const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`, `equipe=eq.${equipeAtual}`];
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
-    const etapasEquipe = EQUIPES[equipeAtual].map((e) => `"${e}"`).join(",");
-    const filtroEtapa = [`etapa_descarte=in.(${etapasEquipe})`];
+    const etapasFiltro = etapaEscolhida ? [etapaEscolhida] : EQUIPES[equipeAtual];
+    const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
 
     const rows = await supabaseGet(
-      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroEtapa, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
+      `discard_analyses?select=data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroEtapa, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=2000`
     );
 
     const reports = await supabaseGet(
-      `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=90`
+      `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=900`
     );
 
+    linhasAtuais = rows;
     renderCards(rows);
     renderCategoriaBars(rows);
     renderAlertas(reports);
@@ -378,6 +423,45 @@ async function carregarDados() {
   }
 }
 
+function exportarXlsx() {
+  if (!linhasAtuais.length) {
+    alert("Nenhum dado carregado para exportar.");
+    return;
+  }
+  const dados = linhasAtuais.map((r) => ({
+    "Data": r.data_descarte ?? "",
+    "Empresa": r.empresa ?? "",
+    "SDR": r.sdr ?? "",
+    "Etapa": r.etapa_descarte ?? "",
+    "Categoria": r.classificacao ?? "",
+    "Motivo registrado (micro)": r.motivo_registrado_micro ?? "",
+    "Motivo registrado (macro)": r.motivo_registrado_macro ?? "",
+    "Motivo de criação (micro)": r.motivo_criacao_micro ?? "",
+    "Motivo de criação (macro)": r.motivo_criacao_macro ?? "",
+    // Coluna separada pedida pelo Pierre: campanha de midia paga do lado do deal.
+    "Campanha (mídia paga)": r.campanha_origem ?? "",
+    "Resumo da conversa (IA)": r.resumo_conversa ?? "",
+    "Observação / causa raiz": r.observacao_causa_raiz ?? "",
+    // Coluna separada pedida pelo Pierre: o que deveria ter sido feito.
+    "Recomendação de ação": r.recomendacao_acao ?? "",
+    "Atividades": formatAtividades(r.atividades_detalhe),
+    "SLA (horas úteis)": r.sla_primeira_ligacao_horas ?? "",
+    "Dentro do SLA (4h)": r.dentro_sla_4h === true ? "Sim" : r.dentro_sla_4h === false ? "Não" : "",
+    "Motivo incorreto?": r.flag_motivo_incorreto ? "Sim" : "Não",
+    "Link HubSpot": r.link_hubspot ?? "",
+    "Transcrição de ligações": r.transcricao_ligacoes ?? "",
+    "Transcrição de mensagens (WhatsApp/Email)": r.transcricao_mensagens ?? "",
+    "Resumo de mensagens (IA)": r.resumo_mensagens ?? "",
+  }));
+
+  const planilha = XLSX.utils.json_to_sheet(dados);
+  const livro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(livro, planilha, "Descartes");
+  const de = document.getElementById("dataDe").value;
+  const ate = document.getElementById("dataAte").value;
+  XLSX.writeFile(livro, `descartes-${equipeAtual}-${de}_a_${ate}.xlsx`);
+}
+
 function renderEquipeToggle() {
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.classList.toggle("ativo", btn.dataset.equipe === equipeAtual);
@@ -388,6 +472,7 @@ function selecionarEquipe(equipe) {
   equipeAtual = equipe;
   localStorage.setItem("discardAgentEquipe", equipe);
   renderEquipeToggle();
+  popularFiltroEtapa();
   carregarDados();
 }
 
@@ -399,11 +484,14 @@ function main() {
   document.getElementById("dataDe").addEventListener("change", carregarDados);
   document.getElementById("dataAte").addEventListener("change", carregarDados);
   document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
+  document.getElementById("filtroEtapa").addEventListener("change", carregarDados);
+  document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
   });
 
   renderEquipeToggle();
+  popularFiltroEtapa();
   carregarDados();
 }
 
