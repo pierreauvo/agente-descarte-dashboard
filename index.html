@@ -287,7 +287,7 @@ function renderTabela(rows) {
           ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
           ${r.resumo_mensagens ? `<div class="detalhe-bloco"><h4>Resumo das mensagens (WhatsApp/Email)</h4><p>${escapeHtml(r.resumo_mensagens)}</p></div>` : ""}
           ${r.transcricao_mensagens ? `<div class="detalhe-bloco"><h4>Transcricao de mensagens</h4><p>${escapeHtml(r.transcricao_mensagens)}</p></div>` : ""}
-          ${r.motivo_criacao_macro || r.fonte_primaria ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Motivo de criação: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}\nFonte primaria: ${escapeHtml(r.fonte_primaria) || "—"}</p></div>` : ""}
+          ${r.motivo_criacao_macro || r.campanha_origem ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Fonte: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}${r.campanha_origem ? `\nCampanha: ${escapeHtml(r.campanha_origem)}` : ""}</p></div>` : ""}
         </td>
       </tr>
     `)
@@ -317,7 +317,7 @@ async function carregarDados() {
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
 
     const rows = await supabaseGet(
-      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,fonte_primaria,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosData, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
+      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosData, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
     );
 
     const reports = await supabaseGet(
