@@ -30,6 +30,18 @@
   .wrap { max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0 0 4px; }
   .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .equipe-toggle {
+    display: flex; gap: 8px; margin-bottom: 20px;
+  }
+  .equipe-toggle button {
+    flex: 1; padding: 14px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); font-size: 14px; font-weight: 600;
+    cursor: pointer; text-align: left;
+  }
+  .equipe-toggle button .etapas { display: block; font-size: 11px; font-weight: 400; margin-top: 2px; }
+  .equipe-toggle button.ativo {
+    border-color: #6ea8fe; color: var(--text); background: #16233a;
+  }
   .filtros {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
@@ -102,6 +114,11 @@
   <h1>Agente de Descartes — Auvo</h1>
   <div class="subtitle" id="subtitle">Carregando...</div>
 
+  <div class="equipe-toggle" id="equipeToggle">
+    <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão</span></button>
+    <button data-equipe="Vendas">Vendas<span class="etapas">Diagnóstico, Apresentação da Solução</span></button>
+  </div>
+
   <div class="filtros">
     <div class="filtro-campo">
       <label>De</label>
@@ -165,6 +182,15 @@ async function supabaseGet(path) {
   if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
   return res.json();
 }
+
+// Espelha src/config/equipes.ts -- manter em sincronia se as etapas mudarem la.
+const EQUIPES = {
+  SDR: ["Entrada", "Conexão"],
+  Vendas: ["Diagnóstico", "Apresentação da Solução"],
+};
+
+let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
+if (!EQUIPES[equipeAtual]) equipeAtual = "SDR";
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -314,11 +340,13 @@ async function carregarDados() {
 
   try {
     const filtrosDataDescartes = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
-    const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`];
+    const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`, `equipe=eq.${equipeAtual}`];
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
+    const etapasEquipe = EQUIPES[equipeAtual].map((e) => `"${e}"`).join(",");
+    const filtroEtapa = [`etapa_descarte=in.(${etapasEquipe})`];
 
     const rows = await supabaseGet(
-      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
+      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroEtapa, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
     );
 
     const reports = await supabaseGet(
@@ -330,11 +358,24 @@ async function carregarDados() {
     renderAlertas(reports);
     renderTabela(rows);
 
-    subtitle.textContent = `${rows.length} descarte(s) entre ${de} e ${ate}`;
+    subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} descarte(s) entre ${de} e ${ate}`;
   } catch (err) {
     subtitle.textContent = `Erro ao carregar dados: ${err.message}`;
     console.error(err);
   }
+}
+
+function renderEquipeToggle() {
+  document.querySelectorAll("#equipeToggle button").forEach((btn) => {
+    btn.classList.toggle("ativo", btn.dataset.equipe === equipeAtual);
+  });
+}
+
+function selecionarEquipe(equipe) {
+  equipeAtual = equipe;
+  localStorage.setItem("discardAgentEquipe", equipe);
+  renderEquipeToggle();
+  carregarDados();
 }
 
 function main() {
@@ -345,7 +386,11 @@ function main() {
   document.getElementById("dataDe").addEventListener("change", carregarDados);
   document.getElementById("dataAte").addEventListener("change", carregarDados);
   document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
+  document.querySelectorAll("#equipeToggle button").forEach((btn) => {
+    btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
+  });
 
+  renderEquipeToggle();
   carregarDados();
 }
 
