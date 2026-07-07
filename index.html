@@ -169,7 +169,7 @@
       <table>
         <thead>
           <tr>
-            <th>Data</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
+            <th>Data (Entrada MQL)</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
             <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
           </tr>
         </thead>
@@ -329,14 +329,14 @@ function renderTabela(rows) {
   let mesAnterior = null;
   const partes = [];
   rows.forEach((r, i) => {
-    const mesAtual = (r.data_descarte ?? "").slice(0, 7);
+    const mesAtual = (r.data_mql ?? "").slice(0, 7);
     if (mesAtual !== mesAnterior) {
-      partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r.data_descarte)}</td></tr>`);
+      partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r.data_mql)}</td></tr>`);
       mesAnterior = mesAtual;
     }
     partes.push(`
       <tr class="linha-descarte" data-idx="${i}">
-        <td>${r.data_descarte ?? "—"}</td>
+        <td>${r.data_mql ?? "—"}</td>
         <td>${escapeHtml(r.empresa) || "—"}</td>
         <td>${escapeHtml(r.sdr) || "—"}</td>
         <td>${escapeHtml(r.etapa_descarte) || "—"}</td>
@@ -350,6 +350,7 @@ function renderTabela(rows) {
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
         <td colspan="11">
+          <div class="detalhe-bloco"><h4>Data do descarte</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
@@ -396,14 +397,17 @@ async function carregarDados() {
   const etapaEscolhida = document.getElementById("filtroEtapa").value;
 
   try {
-    const filtrosDataDescartes = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
+    // Data de referencia = data_mql (Data - Entrada MQL), nao data_descarte -- confirmado
+    // em 2026-07-07 contra o relatorio nativo do HubSpot que Pierre usa como referencia.
+    const filtrosDataMql = [`data_mql=gte.${de}`, `data_mql=lte.${ate}`];
     const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`, `equipe=eq.${equipeAtual}`];
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
     const etapasFiltro = etapaEscolhida ? [etapaEscolhida] : EQUIPES[equipeAtual];
     const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
+    const filtroElegibilidade = [`elegivel_relatorio_hubspot=eq.true`];
 
     const rows = await supabaseGet(
-      `discard_analyses?select=data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroEtapa, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
     );
 
     const reports = await supabaseGet(
@@ -429,7 +433,8 @@ function exportarXlsx() {
     return;
   }
   const dados = linhasAtuais.map((r) => ({
-    "Data": r.data_descarte ?? "",
+    "Data (Entrada MQL)": r.data_mql ?? "",
+    "Data do descarte": r.data_descarte ?? "",
     "Empresa": r.empresa ?? "",
     "SDR": r.sdr ?? "",
     "Etapa": r.etapa_descarte ?? "",
