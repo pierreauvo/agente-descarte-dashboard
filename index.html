@@ -159,7 +159,7 @@
         <thead>
           <tr>
             <th>Data</th><th>Empresa</th><th>SDR</th><th>Categoria</th>
-            <th>Motivo registrado</th><th>Motivo de criação</th><th>Atividades</th><th>SLA (h)</th><th></th>
+            <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
           </tr>
         </thead>
         <tbody id="tabelaDescartes"></tbody>
@@ -287,10 +287,22 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+const RESUMO_GENERICO = "Classificado por regra — sem conteudo de conversa a resumir.";
+
+function resumoPreview(r) {
+  const texto =
+    (r.resumo_conversa && r.resumo_conversa !== RESUMO_GENERICO ? r.resumo_conversa : null) ||
+    r.observacao_causa_raiz ||
+    r.resumo_mensagens ||
+    "";
+  if (!texto) return "—";
+  return texto.length > 90 ? texto.slice(0, 90) + "…" : texto;
+}
+
 function renderTabela(rows) {
   const tbody = document.getElementById("tabelaDescartes");
   if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -302,12 +314,13 @@ function renderTabela(rows) {
         <td><span class="tag ${r.classificacao}">${r.classificacao ?? "—"}</span></td>
         <td>${escapeHtml(r.motivo_registrado_micro) || "—"}</td>
         <td>${escapeHtml(r.motivo_criacao_micro) || "—"}</td>
+        <td class="atividades-mini">${escapeHtml(resumoPreview(r))}</td>
         <td class="atividades-mini">${formatAtividades(r.atividades_detalhe)}</td>
         <td>${r.sla_primeira_ligacao_horas ?? "—"}</td>
-        <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""}</td>
+        <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""} <span style="color:var(--muted)">▾ detalhes</span></td>
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
-        <td colspan="9">
+        <td colspan="10">
           <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
           ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
