@@ -313,15 +313,16 @@ async function carregarDados() {
   const categoria = document.getElementById("filtroCategoria").value;
 
   try {
-    const filtrosData = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
+    const filtrosDataDescartes = [`data_descarte=gte.${de}`, `data_descarte=lte.${ate}`];
+    const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`];
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
 
     const rows = await supabaseGet(
-      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosData, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
+      `discard_analyses?select=data_descarte,empresa,sdr,classificacao,motivo_registrado_micro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataDescartes, ...filtroCategoria].join("&")}&order=data_descarte.desc&limit=1000`
     );
 
     const reports = await supabaseGet(
-      `daily_reports?select=report_date,report_json&${filtrosData.join("&")}&order=report_date.desc&limit=90`
+      `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=90`
     );
 
     renderCards(rows);
