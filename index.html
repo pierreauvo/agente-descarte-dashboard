@@ -50,6 +50,25 @@
   .equipe-toggle button.ativo {
     border-color: #6ea8fe; color: var(--text); background: #16233a;
   }
+  .main-tabs {
+    display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border);
+  }
+  .main-tabs button {
+    padding: 10px 18px; border: none; background: none; color: var(--muted);
+    font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .main-tabs button.ativo { color: var(--text); border-bottom-color: #6ea8fe; }
+  .main-tabs button .badge {
+    display: inline-block; min-width: 18px; padding: 1px 5px; margin-left: 6px;
+    border-radius: 9px; background: var(--critico); color: #fff; font-size: 11px; font-weight: 700;
+  }
+  .tab-pane { display: none; }
+  .tab-pane.ativo { display: block; }
+  .alertas-resumo {
+    display: flex; gap: 16px; margin-bottom: 16px; font-size: 13px; color: var(--muted);
+  }
+  .alertas-resumo strong { color: var(--text); }
   .filtros {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
@@ -133,7 +152,7 @@
     <button data-equipe="Vendas">Vendas<span class="etapas">Diagnóstico, Apresentação da Solução</span></button>
   </div>
 
-  <div class="filtros">
+  <div style="display:flex; flex-direction:row; gap:10px; margin-bottom:16px;">
     <div class="filtro-campo">
       <label>De</label>
       <input type="date" id="dataDe">
@@ -142,55 +161,65 @@
       <label>Até</label>
       <input type="date" id="dataAte">
     </div>
-    <div class="filtro-campo">
-      <label>Categoria</label>
-      <select id="filtroCategoria">
-        <option value="">Todas</option>
-        <option value="OPERACAO">OPERACAO</option>
-        <option value="ESTRUTURAL">ESTRUTURAL</option>
-        <option value="QUALIDADE">QUALIDADE</option>
-        <option value="AUVOHUB">AUVOHUB</option>
-      </select>
-    </div>
-    <div class="filtro-campo">
-      <label>Etapa</label>
-      <select id="filtroEtapa"></select>
-    </div>
-    <div class="filtro-campo">
-      <label>Motivo de descarte</label>
-      <select id="filtroMotivo"><option value="">Todos</option></select>
-    </div>
-    <div class="filtro-campo">
-      <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
-    </div>
   </div>
 
-  <div class="grid" id="cards"></div>
+  <div class="main-tabs" id="mainTabs">
+    <button data-tab="descartes">Descartes</button>
+    <button data-tab="alertas">Alertas<span class="badge" id="badgeAlertas" style="display:none"></span></button>
+  </div>
 
-  <section>
-    <h2>Distribuicao por categoria</h2>
-    <div class="card" id="categoriaBars"></div>
-  </section>
-
-  <section>
-    <h2>Alertas no periodo</h2>
-    <div id="alertas"></div>
-  </section>
-
-  <section>
-    <h2>Descartes no periodo</h2>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Data (Entrada MQL)</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
-            <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="tabelaDescartes"></tbody>
-      </table>
+  <div class="tab-pane" id="tabDescartes">
+    <div class="filtros">
+      <div class="filtro-campo">
+        <label>Categoria</label>
+        <select id="filtroCategoria">
+          <option value="">Todas</option>
+          <option value="OPERACAO">OPERACAO</option>
+          <option value="ESTRUTURAL">ESTRUTURAL</option>
+          <option value="QUALIDADE">QUALIDADE</option>
+          <option value="AUVOHUB">AUVOHUB</option>
+        </select>
+      </div>
+      <div class="filtro-campo">
+        <label>Etapa</label>
+        <select id="filtroEtapa"></select>
+      </div>
+      <div class="filtro-campo">
+        <label>Motivo de descarte</label>
+        <select id="filtroMotivo"><option value="">Todos</option></select>
+      </div>
+      <div class="filtro-campo">
+        <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
+      </div>
     </div>
-  </section>
+
+    <div class="grid" id="cards"></div>
+
+    <section>
+      <h2>Distribuicao por categoria</h2>
+      <div class="card" id="categoriaBars"></div>
+    </section>
+
+    <section>
+      <h2>Descartes no periodo</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data (Entrada MQL)</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
+              <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tabelaDescartes"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="tab-pane" id="tabAlertas">
+    <div class="alertas-resumo" id="alertasResumo"></div>
+    <div id="alertas"></div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -217,6 +246,9 @@ const EQUIPES = {
 
 let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
 if (!EQUIPES[equipeAtual]) equipeAtual = "SDR";
+
+let tabAtiva = localStorage.getItem("discardAgentTab") || "descartes";
+if (!["descartes", "alertas"].includes(tabAtiva)) tabAtiva = "descartes";
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -286,11 +318,30 @@ function renderCategoriaBars(rows) {
 
 function renderAlertas(reports) {
   const el = document.getElementById("alertas");
+  const resumoEl = document.getElementById("alertasResumo");
+  const badgeEl = document.getElementById("badgeAlertas");
   const comAlerta = reports.filter((r) => (r.report_json?.alertas ?? []).length > 0);
-  if (comAlerta.length === 0) {
+  const todosAlertas = comAlerta.flatMap((r) => r.report_json.alertas.map((a) => ({ ...a, data: r.report_date })));
+
+  const porNivel = { CRITICO: 0, ALTO: 0, MEDIO: 0 };
+  todosAlertas.forEach((a) => porNivel[a.nivel]++);
+
+  badgeEl.style.display = todosAlertas.length > 0 ? "inline-block" : "none";
+  badgeEl.textContent = todosAlertas.length;
+
+  if (todosAlertas.length === 0) {
+    resumoEl.innerHTML = "";
     el.innerHTML = `<div class="empty">Nenhum alerta no periodo selecionado.</div>`;
     return;
   }
+
+  resumoEl.innerHTML = `
+    <span><strong>${todosAlertas.length}</strong> alerta(s) no período</span>
+    ${porNivel.CRITICO ? `<span style="color:var(--critico)"><strong>${porNivel.CRITICO}</strong> crítico(s)</span>` : ""}
+    ${porNivel.ALTO ? `<span style="color:var(--alto)"><strong>${porNivel.ALTO}</strong> alto(s)</span>` : ""}
+    ${porNivel.MEDIO ? `<span style="color:var(--medio)"><strong>${porNivel.MEDIO}</strong> médio(s)</span>` : ""}
+  `;
+
   el.innerHTML = comAlerta
     .map((r) =>
       r.report_json.alertas
@@ -586,6 +637,20 @@ function selecionarEquipe(equipe) {
   carregarDados();
 }
 
+function renderTabAtiva() {
+  document.querySelectorAll("#mainTabs button").forEach((btn) => {
+    btn.classList.toggle("ativo", btn.dataset.tab === tabAtiva);
+  });
+  document.getElementById("tabDescartes").classList.toggle("ativo", tabAtiva === "descartes");
+  document.getElementById("tabAlertas").classList.toggle("ativo", tabAtiva === "alertas");
+}
+
+function selecionarTab(tab) {
+  tabAtiva = tab;
+  localStorage.setItem("discardAgentTab", tab);
+  renderTabAtiva();
+}
+
 function main() {
   const { de, ate } = defaultDates();
   document.getElementById("dataDe").value = de;
@@ -600,12 +665,18 @@ function main() {
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
   });
+  document.querySelectorAll("#mainTabs button").forEach((btn) => {
+    btn.addEventListener("click", () => selecionarTab(btn.dataset.tab));
+  });
 
   renderEquipeToggle();
+  renderTabAtiva();
   popularFiltroEtapa();
   carregarDados();
   carregarStatusAtualizacao();
+  carregarStatusIntegridade();
   setInterval(carregarStatusAtualizacao, 5 * 60 * 1000);
+  setInterval(carregarStatusIntegridade, 5 * 60 * 1000);
 }
 
 main();
