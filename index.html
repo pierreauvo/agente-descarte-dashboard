@@ -148,8 +148,8 @@
   <div class="atualizacao" id="integridade">Verificando integridade dos dados...</div>
 
   <div class="equipe-toggle" id="equipeToggle">
-    <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão</span></button>
-    <button data-equipe="Vendas">Vendas<span class="etapas">Diagnóstico, Apresentação da Solução</span></button>
+    <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão, Diagnóstico</span></button>
+    <button data-equipe="Vendas">Vendas<span class="etapas">Apresentação da Solução, Negociação</span></button>
   </div>
 
   <div style="display:flex; flex-direction:row; gap:10px; margin-bottom:16px;">
@@ -206,7 +206,7 @@
         <table>
           <thead>
             <tr>
-              <th>Data (Entrada MQL)</th><th>Empresa</th><th>SDR</th><th>Etapa</th><th>Categoria</th>
+              <th>Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavel">SDR</th><th>Etapa</th><th>Categoria</th>
               <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
             </tr>
           </thead>
@@ -240,8 +240,8 @@ async function supabaseGet(path) {
 
 // Espelha src/config/equipes.ts -- manter em sincronia se as etapas mudarem la.
 const EQUIPES = {
-  SDR: ["Entrada", "Conexão"],
-  Vendas: ["Diagnóstico", "Apresentação da Solução"],
+  SDR: ["Entrada", "Conexão", "Diagnóstico"],
+  Vendas: ["Apresentação da Solução", "Negociação"],
 };
 
 let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
@@ -592,7 +592,7 @@ function exportarXlsx() {
     "Data (Entrada MQL)": r.data_mql ?? "",
     "Data do descarte": r.data_descarte ?? "",
     "Empresa": r.empresa ?? "",
-    "SDR": r.sdr ?? "",
+    [rotuloResponsavel()]: r.sdr ?? "",
     "Etapa": r.etapa_descarte ?? "",
     "Categoria": r.classificacao ?? "",
     "Motivo registrado (micro)": r.motivo_registrado_micro ?? "",
@@ -623,10 +623,17 @@ function exportarXlsx() {
   XLSX.writeFile(livro, `descartes-${equipeAtual}-${de}_a_${ate}.xlsx`);
 }
 
+// Pedido do Pierre em 2026-07-08: na equipe Vendas o nome exibido e do vendedor (closer),
+// nao do SDR -- rotulos de coluna/exportacao precisam refletir isso.
+function rotuloResponsavel() {
+  return equipeAtual === "Vendas" ? "Vendedor" : "SDR";
+}
+
 function renderEquipeToggle() {
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.classList.toggle("ativo", btn.dataset.equipe === equipeAtual);
   });
+  document.getElementById("thResponsavel").textContent = rotuloResponsavel();
 }
 
 function selecionarEquipe(equipe) {
