@@ -74,7 +74,7 @@
   .bar-label { width: 90px; flex-shrink: 0; color: var(--muted); }
   .bar-track { flex: 1; background: #1f2330; border-radius: 4px; height: 8px; overflow: hidden; }
   .bar-fill { height: 100%; border-radius: 4px; }
-  .bar-pct { width: 42px; text-align: right; flex-shrink: 0; }
+  .bar-pct { width: 90px; text-align: right; flex-shrink: 0; }
   section { margin-bottom: 28px; }
   section h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
   .alerta {
@@ -154,6 +154,10 @@
     <div class="filtro-campo">
       <label>Etapa</label>
       <select id="filtroEtapa"></select>
+    </div>
+    <div class="filtro-campo">
+      <label>Motivo de descarte</label>
+      <select id="filtroMotivo"><option value="">Todos</option></select>
     </div>
     <div class="filtro-campo">
       <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
@@ -273,7 +277,7 @@ function renderCategoriaBars(rows) {
       <div class="bar-row">
         <div class="bar-label">${cat}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct(count, total)}%;background:${CATEGORIA_COLOR[cat] || "#888"}"></div></div>
-        <div class="bar-pct">${pct(count, total)}%</div>
+        <div class="bar-pct">${count} (${pct(count, total)}%)</div>
       </div>`
     )
     .join("");
@@ -398,6 +402,19 @@ function popularFiltroEtapa() {
     etapas.map((e) => `<option value="${e}">${e}</option>`).join("");
 }
 
+// Populado dinamicamente a partir dos motivos presentes no periodo/filtros atuais (exceto o
+// proprio filtro de motivo) -- assim a lista nunca fica desatualizada em relacao ao enum real
+// do HubSpot, e preserva a selecao atual se ela ainda for uma opcao valida.
+function popularFiltroMotivo(rows) {
+  const select = document.getElementById("filtroMotivo");
+  const selecionado = select.value;
+  const motivos = [...new Set(rows.map((r) => r.motivo_registrado_micro).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` +
+    motivos.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  if (motivos.includes(selecionado)) select.value = selecionado;
+}
+
 async function carregarDados() {
   const subtitle = document.getElementById("subtitle");
   const de = document.getElementById("dataDe").value;
@@ -415,9 +432,17 @@ async function carregarDados() {
     const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
     const filtroElegibilidade = [`elegivel_relatorio_hubspot=eq.true`];
 
-    const rows = await supabaseGet(
+    // Motivo NAO entra na query -- filtrado client-side abaixo, para que o dropdown de
+    // motivos continue mostrando todas as opcoes possiveis do periodo/etapa/categoria atual.
+    const rowsSemFiltroMotivo = await supabaseGet(
       `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
     );
+
+    popularFiltroMotivo(rowsSemFiltroMotivo);
+    const motivoEscolhido = document.getElementById("filtroMotivo").value;
+    const rows = motivoEscolhido
+      ? rowsSemFiltroMotivo.filter((r) => r.motivo_registrado_micro === motivoEscolhido)
+      : rowsSemFiltroMotivo;
 
     const reports = await supabaseGet(
       `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=900`
@@ -529,6 +554,7 @@ function main() {
   document.getElementById("dataAte").addEventListener("change", carregarDados);
   document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
   document.getElementById("filtroEtapa").addEventListener("change", carregarDados);
+  document.getElementById("filtroMotivo").addEventListener("change", carregarDados);
   document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
