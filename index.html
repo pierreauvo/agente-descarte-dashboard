@@ -29,7 +29,15 @@
   }
   .wrap { max-width: 1200px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0 0 4px; }
-  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .atualizacao {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--muted); font-size: 12px; margin-bottom: 20px;
+  }
+  .atualizacao .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--qualidade); flex-shrink: 0;
+  }
+  .atualizacao.atrasado .dot { background: var(--alto); }
   .equipe-toggle {
     display: flex; gap: 8px; margin-bottom: 20px;
   }
@@ -117,6 +125,7 @@
 <div class="wrap">
   <h1>Agente de Descartes — Auvo</h1>
   <div class="subtitle" id="subtitle">Carregando...</div>
+  <div class="atualizacao" id="atualizacao">Verificando última atualização...</div>
 
   <div class="equipe-toggle" id="equipeToggle">
     <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão</span></button>
@@ -427,6 +436,36 @@ async function carregarDados() {
   }
 }
 
+// Atualizacao automatica a cada 2h via GitHub Actions (.github/workflows/daily.yml).
+// agent_runs.run_at guarda quando o cron rodou de verdade -- usado aqui so para exibir
+// o status para o usuario, nao para disparar nada (o disparo e feito pelo GitHub Actions).
+const INTERVALO_ATUALIZACAO_HORAS = 2;
+
+function formatarDataHoraBr(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+async function carregarStatusAtualizacao() {
+  const el = document.getElementById("atualizacao");
+  try {
+    const runs = await supabaseGet("agent_runs?select=run_at,status&order=run_at.desc&limit=1");
+    if (!runs.length) {
+      el.innerHTML = `<span class="dot"></span> Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h — nenhuma execução registrada ainda.`;
+      return;
+    }
+    const ultima = new Date(runs[0].run_at + "Z");
+    const horasAtras = (Date.now() - ultima.getTime()) / 3600000;
+    const atrasado = horasAtras > INTERVALO_ATUALIZACAO_HORAS * 1.5;
+    el.classList.toggle("atrasado", atrasado);
+    const aviso = atrasado ? " (atraso na atualização automática)" : "";
+    el.innerHTML = `<span class="dot"></span> Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h — última execução: ${formatarDataHoraBr(runs[0].run_at + "Z")}${aviso}`;
+  } catch (err) {
+    el.textContent = `Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h.`;
+    console.error(err);
+  }
+}
+
 function exportarXlsx() {
   if (!linhasAtuais.length) {
     alert("Nenhum dado carregado para exportar.");
@@ -498,6 +537,8 @@ function main() {
   renderEquipeToggle();
   popularFiltroEtapa();
   carregarDados();
+  carregarStatusAtualizacao();
+  setInterval(carregarStatusAtualizacao, 5 * 60 * 1000);
 }
 
 main();
