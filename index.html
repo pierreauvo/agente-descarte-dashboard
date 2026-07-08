@@ -126,6 +126,7 @@
   <h1>Agente de Descartes — Auvo</h1>
   <div class="subtitle" id="subtitle">Carregando...</div>
   <div class="atualizacao" id="atualizacao">Verificando última atualização...</div>
+  <div class="atualizacao" id="integridade">Verificando integridade dos dados...</div>
 
   <div class="equipe-toggle" id="equipeToggle">
     <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão</span></button>
@@ -474,7 +475,9 @@ function formatarDataHoraBr(iso) {
 async function carregarStatusAtualizacao() {
   const el = document.getElementById("atualizacao");
   try {
-    const runs = await supabaseGet("agent_runs?select=run_at,status&order=run_at.desc&limit=1");
+    // mode=eq.daily -- sem isso, uma execucao da verificacao semanal de integridade (mode=
+    // integrity) mais recente apareceria aqui como se fosse a ultima coleta de descartes.
+    const runs = await supabaseGet("agent_runs?select=run_at,status&mode=eq.daily&order=run_at.desc&limit=1");
     if (!runs.length) {
       el.innerHTML = `<span class="dot"></span> Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h — nenhuma execução registrada ainda.`;
       return;
@@ -487,6 +490,44 @@ async function carregarStatusAtualizacao() {
     el.innerHTML = `<span class="dot"></span> Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h — última execução: ${formatarDataHoraBr(runs[0].run_at + "Z")}${aviso}`;
   } catch (err) {
     el.textContent = `Atualização automática a cada ${INTERVALO_ATUALIZACAO_HORAS}h.`;
+    console.error(err);
+  }
+}
+
+// Verificacao semanal de completude (mode=integrity, ver src/cron/integrityCheck.ts) --
+// exigencia permanente do Pierre: transcricoes/emails/whatsapp nao podem ficar incompletos
+// silenciosamente. Mostra aqui o resultado da ultima verificacao para que qualquer divergencia
+// fique visivel mesmo sem checar o Discord.
+async function carregarStatusIntegridade() {
+  const el = document.getElementById("integridade");
+  try {
+    const runs = await supabaseGet(
+      "agent_runs?select=run_at,status,deals_errored,deals_processed,details&mode=eq.integrity&order=run_at.desc&limit=1"
+    );
+    if (!runs.length) {
+      el.innerHTML = `<span class="dot"></span> Verificação de integridade semanal — ainda não rodou nenhuma vez.`;
+      return;
+    }
+    const [run] = runs;
+    // deals_errored = falhas reais de fetch/correcao (job quebrou). Divergencias encontradas
+    // sao auto-corrigidas na hora (ver integrityCheck.ts) e nao contam como erro do job --
+    // ficam em details.dealsComDivergenciaCount so para transparencia.
+    const falhas = run.deals_errored ?? 0;
+    const divergencias = run.details?.dealsComDivergenciaCount ?? 0;
+    const corrigidos = run.details?.corrigidosAutomaticamente ?? 0;
+    const falhou = falhas > 0;
+    el.classList.toggle("atrasado", falhou);
+    let detalheTexto;
+    if (falhou) {
+      detalheTexto = `${falhas} falha(s) ao verificar/corrigir — ver logs do GitHub Actions`;
+    } else if (divergencias > 0) {
+      detalheTexto = `${divergencias} deal(s) com dado desatualizado encontrado(s) e ${corrigidos} corrigido(s) automaticamente em ${run.deals_processed} verificado(s)`;
+    } else {
+      detalheTexto = `nenhuma divergência em ${run.deals_processed} deal(s) verificado(s)`;
+    }
+    el.innerHTML = `<span class="dot"></span> Última verificação de integridade: ${formatarDataHoraBr(run.run_at + "Z")} — ${detalheTexto}`;
+  } catch (err) {
+    el.textContent = "Verificação de integridade semanal.";
     console.error(err);
   }
 }
