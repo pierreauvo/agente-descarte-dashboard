@@ -589,9 +589,13 @@ async function carregarStatusIntegridade() {
     const corrigidos = run.details?.corrigidosAutomaticamente ?? 0;
     const falhou = falhas > 0;
     el.classList.toggle("atrasado", falhou);
+    // "Falha" aqui e diferente de "divergencia": falha = nao deu nem para comparar (ex:
+    // timeout de rede na chamada ao HubSpot) -- nao ha nada de errado com o dado em si, so
+    // nao foi possivel checar naquele momento. Divergencia = comparou e o dado estava
+    // desatualizado, e ja foi corrigida automaticamente antes deste status ser exibido.
     let detalheTexto;
     if (falhou) {
-      detalheTexto = `${falhas} falha(s) ao verificar/corrigir — ver logs do GitHub Actions`;
+      detalheTexto = `${falhas} deal(s) nao puderam ser verificados por instabilidade de rede/API (nao e um problema nos dados — deve se resolver sozinho na proxima execucao semanal)`;
     } else if (divergencias > 0) {
       detalheTexto = `${divergencias} deal(s) com dado desatualizado encontrado(s) e ${corrigidos} corrigido(s) automaticamente em ${run.deals_processed} verificado(s)`;
     } else {
