@@ -185,6 +185,10 @@
         <select id="filtroEtapa"></select>
       </div>
       <div class="filtro-campo">
+        <label id="labelFiltroResponsavel">SDR</label>
+        <select id="filtroResponsavel"><option value="">Todos</option></select>
+      </div>
+      <div class="filtro-campo">
         <label>Motivo de descarte</label>
         <select id="filtroMotivo"><option value="">Todos</option></select>
       </div>
@@ -467,6 +471,20 @@ function popularFiltroMotivo(rows) {
   if (motivos.includes(selecionado)) select.value = selecionado;
 }
 
+// Mesmo padrao do filtro de motivo: populado a partir dos nomes presentes no periodo/etapa/
+// categoria atual. O rotulo (label + opcao "Todos") muda entre "SDR" e "Vendedor" conforme a
+// equipe ativa, ja que o campo `sdr` guarda o vendedor na aba Vendas (pedido do Pierre).
+function popularFiltroResponsavel(rows) {
+  document.getElementById("labelFiltroResponsavel").textContent = rotuloResponsavel();
+  const select = document.getElementById("filtroResponsavel");
+  const selecionado = select.value;
+  const nomes = [...new Set(rows.map((r) => r.sdr).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` +
+    nomes.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+  if (nomes.includes(selecionado)) select.value = selecionado;
+}
+
 async function carregarDados() {
   const subtitle = document.getElementById("subtitle");
   const de = document.getElementById("dataDe").value;
@@ -484,17 +502,20 @@ async function carregarDados() {
     const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
     const filtroElegibilidade = [`elegivel_relatorio_hubspot=eq.true`];
 
-    // Motivo NAO entra na query -- filtrado client-side abaixo, para que o dropdown de
-    // motivos continue mostrando todas as opcoes possiveis do periodo/etapa/categoria atual.
-    const rowsSemFiltroMotivo = await supabaseGet(
+    // Motivo e responsavel (SDR/Vendedor) NAO entram na query -- filtrados client-side
+    // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
+    // periodo/etapa/categoria atual.
+    const rowsBase = await supabaseGet(
       `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
     );
 
-    popularFiltroMotivo(rowsSemFiltroMotivo);
+    popularFiltroMotivo(rowsBase);
+    popularFiltroResponsavel(rowsBase);
     const motivoEscolhido = document.getElementById("filtroMotivo").value;
-    const rows = motivoEscolhido
-      ? rowsSemFiltroMotivo.filter((r) => r.motivo_registrado_micro === motivoEscolhido)
-      : rowsSemFiltroMotivo;
+    const responsavelEscolhido = document.getElementById("filtroResponsavel").value;
+    const rows = rowsBase
+      .filter((r) => !motivoEscolhido || r.motivo_registrado_micro === motivoEscolhido)
+      .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido);
 
     const reports = await supabaseGet(
       `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=900`
@@ -668,6 +689,7 @@ function main() {
   document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
   document.getElementById("filtroEtapa").addEventListener("change", carregarDados);
   document.getElementById("filtroMotivo").addEventListener("change", carregarDados);
+  document.getElementById("filtroResponsavel").addEventListener("change", carregarDados);
   document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
