@@ -96,6 +96,16 @@
   .bar-pct { width: 90px; text-align: right; flex-shrink: 0; }
   section { margin-bottom: 28px; }
   section h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 12px; }
+  .pager {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-top: 14px; font-size: 13px; color: var(--muted);
+  }
+  .pager button {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .pager button:disabled { opacity: 0.4; cursor: default; }
+  .pager button:not(:disabled):hover { background: #1a1d28; }
   .alerta {
     border-left: 3px solid var(--medio);
     background: var(--card);
@@ -166,6 +176,7 @@
   <div class="main-tabs" id="mainTabs">
     <button data-tab="descartes">Descartes</button>
     <button data-tab="alertas">Alertas<span class="badge" id="badgeAlertas" style="display:none"></span></button>
+    <button data-tab="motivosIncorretos">Motivos Incorretos<span class="badge" id="badgeMotivosIncorretos" style="display:none"></span></button>
   </div>
 
   <div class="tab-pane" id="tabDescartes">
@@ -217,12 +228,29 @@
           <tbody id="tabelaDescartes"></tbody>
         </table>
       </div>
+      <div class="pager" id="pagerDescartes"></div>
     </section>
   </div>
 
   <div class="tab-pane" id="tabAlertas">
     <div class="alertas-resumo" id="alertasResumo"></div>
     <div id="alertas"></div>
+  </div>
+
+  <div class="tab-pane" id="tabMotivosIncorretos">
+    <div class="alertas-resumo" id="motivosIncorretosResumo"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavelMI">SDR</th><th>Etapa</th><th>Categoria final</th>
+            <th>Motivo registrado (errado)</th><th>Por que esta errado / motivo correto</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tabelaMotivosIncorretos"></tbody>
+      </table>
+    </div>
+    <div class="pager" id="pagerMotivosIncorretos"></div>
   </div>
 </div>
 
@@ -252,7 +280,7 @@ let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
 if (!EQUIPES[equipeAtual]) equipeAtual = "SDR";
 
 let tabAtiva = localStorage.getItem("discardAgentTab") || "descartes";
-if (!["descartes", "alertas"].includes(tabAtiva)) tabAtiva = "descartes";
+if (!["descartes", "alertas", "motivosIncorretos"].includes(tabAtiva)) tabAtiva = "descartes";
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -388,16 +416,44 @@ function mesLabel(dataIso) {
   return `${MES_NOMES[Number(mes) - 1]} de ${ano}`;
 }
 
+// Paginacao client-side (dados ja vem completos do Supabase, so a renderizacao e fatiada) --
+// pedido do Pierre: o painel so mostrava visualmente o dia mais recente porque a tabela toda
+// nao cabia na tela; agora com paginas fica claro que o periodo inteiro esta ali.
+const PAGE_SIZE = 50;
+let paginaDescartes = 1;
+let paginaMotivosIncorretos = 1;
+
+function renderPagerControls(containerId, totalItems, currentPage, totalPages, onPrev, onNext) {
+  const el = document.getElementById(containerId);
+  if (totalItems === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `
+    <button id="${containerId}-prev" ${currentPage <= 1 ? "disabled" : ""}>← Anterior</button>
+    <span>Página ${currentPage} de ${totalPages} (${totalItems} registro${totalItems === 1 ? "" : "s"})</span>
+    <button id="${containerId}-next" ${currentPage >= totalPages ? "disabled" : ""}>Próxima →</button>
+  `;
+  document.getElementById(`${containerId}-prev`).addEventListener("click", onPrev);
+  document.getElementById(`${containerId}-next`).addEventListener("click", onNext);
+}
+
 function renderTabela(rows) {
   const tbody = document.getElementById("tabelaDescartes");
   if (rows.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" class="empty">Nenhum descarte encontrado no periodo.</td></tr>`;
+    document.getElementById("pagerDescartes").innerHTML = "";
     return;
   }
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  paginaDescartes = Math.min(Math.max(1, paginaDescartes), totalPages);
+  const inicioPagina = (paginaDescartes - 1) * PAGE_SIZE;
+  const rowsPagina = rows.slice(inicioPagina, inicioPagina + PAGE_SIZE);
+
   let mesAnterior = null;
   const partes = [];
-  rows.forEach((r, i) => {
+  rowsPagina.forEach((r, i) => {
     const mesAtual = (r.data_mql ?? "").slice(0, 7);
     if (mesAtual !== mesAnterior) {
       partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r.data_mql)}</td></tr>`);
@@ -439,6 +495,95 @@ function renderTabela(rows) {
       detalhe.style.display = detalhe.style.display === "none" ? "" : "none";
     });
   });
+
+  renderPagerControls(
+    "pagerDescartes",
+    rows.length,
+    paginaDescartes,
+    totalPages,
+    () => { paginaDescartes--; renderTabela(rows); },
+    () => { paginaDescartes++; renderTabela(rows); }
+  );
+}
+
+// Pedido do Pierre em 2026-07-08: aba dedicada mostrando quais descartes tiveram motivo
+// registrado pelo SDR/vendedor divergente do que a IA identificou no conteudo real da
+// conversa -- flag_motivo_incorreto_razao ja contem tanto o "por que esta errado" quanto o
+// "qual seria o motivo correto" (texto corrido gerado pela IA, ver classifier-system-prompt.ts).
+function renderMotivosIncorretos(rows) {
+  const tbody = document.getElementById("tabelaMotivosIncorretos");
+  const resumoEl = document.getElementById("motivosIncorretosResumo");
+  const badgeEl = document.getElementById("badgeMotivosIncorretos");
+
+  badgeEl.style.display = rows.length > 0 ? "inline-block" : "none";
+  badgeEl.textContent = rows.length;
+
+  if (rows.length === 0) {
+    resumoEl.innerHTML = "";
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">Nenhum motivo incorreto encontrado no periodo.</td></tr>`;
+    document.getElementById("pagerMotivosIncorretos").innerHTML = "";
+    return;
+  }
+
+  const porResponsavel = {};
+  rows.forEach((r) => {
+    const nome = r.sdr || "Unassigned";
+    porResponsavel[nome] = (porResponsavel[nome] || 0) + 1;
+  });
+  const rankingResponsaveis = Object.entries(porResponsavel)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([nome, count]) => `${escapeHtml(nome)} (${count})`)
+    .join(", ");
+  resumoEl.innerHTML = `
+    <span><strong>${rows.length}</strong> motivo(s) incorreto(s) no período</span>
+    <span>Mais frequente: ${rankingResponsaveis}</span>
+  `;
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  paginaMotivosIncorretos = Math.min(Math.max(1, paginaMotivosIncorretos), totalPages);
+  const inicioPagina = (paginaMotivosIncorretos - 1) * PAGE_SIZE;
+  const rowsPagina = rows.slice(inicioPagina, inicioPagina + PAGE_SIZE);
+
+  const partes = [];
+  rowsPagina.forEach((r, i) => {
+    partes.push(`
+      <tr class="linha-descarte" data-idx="${i}">
+        <td>${r.data_mql ?? "—"}</td>
+        <td>${escapeHtml(r.empresa) || "—"}</td>
+        <td>${escapeHtml(r.sdr) || "—"}</td>
+        <td>${escapeHtml(r.etapa_descarte) || "—"}</td>
+        <td><span class="tag ${r.classificacao}">${r.classificacao ?? "—"}</span></td>
+        <td>${escapeHtml(r.motivo_registrado_micro) || "—"}</td>
+        <td class="atividades-mini">${escapeHtml((r.flag_motivo_incorreto_razao || "").slice(0, 120))}${(r.flag_motivo_incorreto_razao || "").length > 120 ? "…" : ""}</td>
+        <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""} <span style="color:var(--muted)">▾ detalhes</span></td>
+      </tr>
+      <tr class="detalhe-row" id="detalheMI-${i}" style="display:none">
+        <td colspan="8">
+          <div class="detalhe-bloco"><h4>Por que o motivo registrado esta errado / qual deveria ser</h4><p>${escapeHtml(r.flag_motivo_incorreto_razao) || "—"}</p></div>
+          <div class="detalhe-bloco"><h4>Observacao / causa raiz completa</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
+          <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
+        </td>
+      </tr>
+    `);
+  });
+  tbody.innerHTML = partes.join("");
+
+  tbody.querySelectorAll("tr.linha-descarte").forEach((tr) => {
+    tr.addEventListener("click", () => {
+      const detalhe = document.getElementById(`detalheMI-${tr.dataset.idx}`);
+      detalhe.style.display = detalhe.style.display === "none" ? "" : "none";
+    });
+  });
+
+  renderPagerControls(
+    "pagerMotivosIncorretos",
+    rows.length,
+    paginaMotivosIncorretos,
+    totalPages,
+    () => { paginaMotivosIncorretos--; renderMotivosIncorretos(rows); },
+    () => { paginaMotivosIncorretos++; renderMotivosIncorretos(rows); }
+  );
 }
 
 function defaultDates() {
@@ -506,7 +651,7 @@ async function carregarDados() {
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
@@ -517,15 +662,26 @@ async function carregarDados() {
       .filter((r) => !motivoEscolhido || r.motivo_registrado_micro === motivoEscolhido)
       .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido);
 
+    // Aba "Motivos Incorretos": deriva do mesmo rowsBase (respeita data/equipe/etapa/
+    // categoria), mas ignora os filtros de motivo/responsavel do Descartes -- e uma visao de
+    // auditoria propria, nao deve ficar vazia so porque o usuario filtrou outra coisa na
+    // aba principal.
+    const rowsMotivosIncorretos = rowsBase.filter((r) => r.flag_motivo_incorreto);
+
     const reports = await supabaseGet(
       `daily_reports?select=report_date,report_json&${filtrosDataReports.join("&")}&order=report_date.desc&limit=900`
     );
 
     linhasAtuais = rows;
+    // Reseta para a primeira pagina a cada nova carga (filtro/data/equipe mudou) -- senao o
+    // usuario pode ficar "presos" numa pagina que nao existe mais no novo conjunto de dados.
+    paginaDescartes = 1;
+    paginaMotivosIncorretos = 1;
     renderCards(rows);
     renderCategoriaBars(rows);
     renderAlertas(reports);
     renderTabela(rows);
+    renderMotivosIncorretos(rowsMotivosIncorretos);
 
     subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} descarte(s) entre ${de} e ${ate}`;
   } catch (err) {
@@ -659,6 +815,7 @@ function renderEquipeToggle() {
     btn.classList.toggle("ativo", btn.dataset.equipe === equipeAtual);
   });
   document.getElementById("thResponsavel").textContent = rotuloResponsavel();
+  document.getElementById("thResponsavelMI").textContent = rotuloResponsavel();
 }
 
 function selecionarEquipe(equipe) {
@@ -675,6 +832,7 @@ function renderTabAtiva() {
   });
   document.getElementById("tabDescartes").classList.toggle("ativo", tabAtiva === "descartes");
   document.getElementById("tabAlertas").classList.toggle("ativo", tabAtiva === "alertas");
+  document.getElementById("tabMotivosIncorretos").classList.toggle("ativo", tabAtiva === "motivosIncorretos");
 }
 
 function selecionarTab(tab) {
