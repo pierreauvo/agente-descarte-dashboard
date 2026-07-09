@@ -105,6 +105,12 @@
     background: var(--card); color: var(--text); font-size: 13px; cursor: pointer;
   }
   .pager button:disabled { opacity: 0.4; cursor: default; }
+  .btn-corrigir {
+    display: inline-block; padding: 5px 12px; border-radius: 6px;
+    background: rgba(230,126,34,0.15); color: var(--alto); border: 1px solid var(--alto);
+    font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap;
+  }
+  .btn-corrigir:hover { background: rgba(230,126,34,0.28); text-decoration: none; }
   .pager button:not(:disabled):hover { background: #1a1d28; }
   .alerta {
     border-left: 3px solid var(--medio);
@@ -556,13 +562,18 @@ function renderMotivosIncorretos(rows) {
         <td><span class="tag ${r.classificacao}">${r.classificacao ?? "—"}</span></td>
         <td>${escapeHtml(r.motivo_registrado_micro) || "—"}</td>
         <td class="atividades-mini">${escapeHtml((r.flag_motivo_incorreto_razao || "").slice(0, 120))}${(r.flag_motivo_incorreto_razao || "").length > 120 ? "…" : ""}</td>
-        <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""} <span style="color:var(--muted)">▾ detalhes</span></td>
+        <td>
+          ${r.link_hubspot ? `<a class="btn-corrigir" href="${r.link_hubspot}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Corrigir no HubSpot →</a>` : ""}
+          <span style="color:var(--muted); margin-left:6px;">▾ detalhes</span>
+        </td>
       </tr>
       <tr class="detalhe-row" id="detalheMI-${i}" style="display:none">
         <td colspan="8">
+          <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Por que o motivo registrado esta errado / qual deveria ser</h4><p>${escapeHtml(r.flag_motivo_incorreto_razao) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz completa</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
+          ${r.link_hubspot ? `<div class="detalhe-bloco"><a class="btn-corrigir" href="${r.link_hubspot}" target="_blank" rel="noopener">Corrigir no HubSpot →</a></div>` : ""}
         </td>
       </tr>
     `);
