@@ -200,7 +200,7 @@
         <select id="filtroResponsavel"><option value="">Todos</option></select>
       </div>
       <div class="filtro-campo">
-        <label>Motivo de descarte</label>
+        <label id="labelFiltroMotivo">Motivo de descarte</label>
         <select id="filtroMotivo"><option value="">Todos</option></select>
       </div>
       <div class="filtro-campo">
@@ -216,7 +216,7 @@
     </section>
 
     <section>
-      <h2>Descartes no periodo</h2>
+      <h2 id="headerDescartes">Descartes no periodo</h2>
       <div class="table-wrap">
         <table>
           <thead>
@@ -475,7 +475,7 @@ function renderTabela(rows) {
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
         <td colspan="11">
-          <div class="detalhe-bloco"><h4>Data do descarte</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
+          <div class="detalhe-bloco"><h4>Data de ${rotuloResultado().toLowerCase()}</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
@@ -646,12 +646,15 @@ async function carregarDados() {
     const etapasFiltro = etapaEscolhida ? [etapaEscolhida] : EQUIPES[equipeAtual];
     const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
     const filtroElegibilidade = [`elegivel_relatorio_hubspot=eq.true`];
+    // SDR = descartes, Vendas = perdas (Apresentacao da Solucao/Negociacao usam motivo de
+    // perda, nao motivo de descarte) -- pedido do Pierre em 2026-07-09.
+    const filtroTipo = [`tipo=eq.${equipeAtual === "Vendas" ? "perda" : "descarte"}`];
 
     // Motivo e responsavel (SDR/Vendedor) NAO entram na query -- filtrados client-side
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade].join("&")}&order=data_mql.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo].join("&")}&order=data_mql.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
@@ -683,7 +686,7 @@ async function carregarDados() {
     renderTabela(rows);
     renderMotivosIncorretos(rowsMotivosIncorretos);
 
-    subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} descarte(s) entre ${de} e ${ate}`;
+    subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
   } catch (err) {
     subtitle.textContent = `Erro ao carregar dados: ${err.message}`;
     console.error(err);
@@ -771,7 +774,7 @@ function exportarXlsx() {
   }
   const dados = linhasAtuais.map((r) => ({
     "Data (Entrada MQL)": r.data_mql ?? "",
-    "Data do descarte": r.data_descarte ?? "",
+    [`Data de ${rotuloResultado().toLowerCase()}`]: r.data_descarte ?? "",
     "Empresa": r.empresa ?? "",
     [rotuloResponsavel()]: r.sdr ?? "",
     "Etapa": r.etapa_descarte ?? "",
@@ -798,16 +801,20 @@ function exportarXlsx() {
 
   const planilha = XLSX.utils.json_to_sheet(dados);
   const livro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(livro, planilha, "Descartes");
+  XLSX.utils.book_append_sheet(livro, planilha, `${rotuloResultado()}s`);
   const de = document.getElementById("dataDe").value;
   const ate = document.getElementById("dataAte").value;
-  XLSX.writeFile(livro, `descartes-${equipeAtual}-${de}_a_${ate}.xlsx`);
+  XLSX.writeFile(livro, `${rotuloResultado().toLowerCase()}s-${equipeAtual}-${de}_a_${ate}.xlsx`);
 }
 
-// Pedido do Pierre em 2026-07-08: na equipe Vendas o nome exibido e do vendedor (closer),
-// nao do SDR -- rotulos de coluna/exportacao precisam refletir isso.
+// Pedido do Pierre em 2026-07-08/09: na equipe Vendas o nome exibido e do vendedor (closer),
+// nao do SDR, e o resultado negativo e "perda" (nao "descarte") -- rotulos de coluna/secao/
+// exportacao precisam refletir isso.
 function rotuloResponsavel() {
   return equipeAtual === "Vendas" ? "Vendedor" : "SDR";
+}
+function rotuloResultado() {
+  return equipeAtual === "Vendas" ? "Perda" : "Descarte";
 }
 
 function renderEquipeToggle() {
@@ -816,6 +823,8 @@ function renderEquipeToggle() {
   });
   document.getElementById("thResponsavel").textContent = rotuloResponsavel();
   document.getElementById("thResponsavelMI").textContent = rotuloResponsavel();
+  document.getElementById("headerDescartes").textContent = `${rotuloResultado()}s no período`;
+  document.getElementById("labelFiltroMotivo").textContent = `Motivo de ${rotuloResultado().toLowerCase()}`;
 }
 
 function selecionarEquipe(equipe) {
