@@ -183,6 +183,7 @@
     <button data-tab="descartes">Descartes</button>
     <button data-tab="alertas">Alertas<span class="badge" id="badgeAlertas" style="display:none"></span></button>
     <button data-tab="motivosIncorretos">Motivos Incorretos<span class="badge" id="badgeMotivosIncorretos" style="display:none"></span></button>
+    <button data-tab="comparacaoMensal">Comparação Mensal</button>
   </div>
 
   <div class="tab-pane" id="tabDescartes">
@@ -227,7 +228,7 @@
         <table>
           <thead>
             <tr>
-              <th>Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavel">SDR</th><th>Etapa</th><th>Categoria</th>
+              <th id="thDataPrincipal">Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavel">SDR</th><th>Etapa</th><th>Categoria</th>
               <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
             </tr>
           </thead>
@@ -249,7 +250,7 @@
       <table>
         <thead>
           <tr>
-            <th>Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavelMI">SDR</th><th>Etapa</th><th>Categoria final</th>
+            <th id="thDataPrincipalMI">Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavelMI">SDR</th><th>Etapa</th><th>Categoria final</th>
             <th>Motivo registrado (errado)</th><th>Por que esta errado / motivo correto</th><th></th>
           </tr>
         </thead>
@@ -257,6 +258,22 @@
       </table>
     </div>
     <div class="pager" id="pagerMotivosIncorretos"></div>
+  </div>
+
+  <div class="tab-pane" id="tabComparacaoMensal">
+    <div class="alertas-resumo" id="mensalResumo"></div>
+    <section>
+      <h2 id="headerMensalVolume">Volume por mes</h2>
+      <div class="card" id="mensalVolume"></div>
+    </section>
+    <section>
+      <h2 id="headerMotivosAlta">Motivos em alta</h2>
+      <div class="card" id="motivosAlta"></div>
+    </section>
+    <section>
+      <h2 id="headerMotivosQueda">Motivos em queda</h2>
+      <div class="card" id="motivosQueda"></div>
+    </section>
   </div>
 </div>
 
@@ -286,7 +303,7 @@ let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
 if (!EQUIPES[equipeAtual]) equipeAtual = "SDR";
 
 let tabAtiva = localStorage.getItem("discardAgentTab") || "descartes";
-if (!["descartes", "alertas", "motivosIncorretos"].includes(tabAtiva)) tabAtiva = "descartes";
+if (!["descartes", "alertas", "motivosIncorretos", "comparacaoMensal"].includes(tabAtiva)) tabAtiva = "descartes";
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -457,17 +474,18 @@ function renderTabela(rows) {
   const inicioPagina = (paginaDescartes - 1) * PAGE_SIZE;
   const rowsPagina = rows.slice(inicioPagina, inicioPagina + PAGE_SIZE);
 
+  const campoData = campoDataPrincipal();
   let mesAnterior = null;
   const partes = [];
   rowsPagina.forEach((r, i) => {
-    const mesAtual = (r.data_mql ?? "").slice(0, 7);
+    const mesAtual = (r[campoData] ?? "").slice(0, 7);
     if (mesAtual !== mesAnterior) {
-      partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r.data_mql)}</td></tr>`);
+      partes.push(`<tr class="mes-divider"><td colspan="11">${mesLabel(r[campoData])}</td></tr>`);
       mesAnterior = mesAtual;
     }
     partes.push(`
       <tr class="linha-descarte" data-idx="${i}">
-        <td>${r.data_mql ?? "—"}</td>
+        <td>${r[campoData] ?? "—"}</td>
         <td>${escapeHtml(r.empresa) || "—"}</td>
         <td>${escapeHtml(r.sdr) || "—"}</td>
         <td>${escapeHtml(r.etapa_descarte) || "—"}</td>
@@ -481,6 +499,7 @@ function renderTabela(rows) {
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
         <td colspan="11">
+          <div class="detalhe-bloco"><h4>Data de Entrada (MQL)</h4><p>${escapeHtml(r.data_mql) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Data de ${rotuloResultado().toLowerCase()}</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
           <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
@@ -551,11 +570,12 @@ function renderMotivosIncorretos(rows) {
   const inicioPagina = (paginaMotivosIncorretos - 1) * PAGE_SIZE;
   const rowsPagina = rows.slice(inicioPagina, inicioPagina + PAGE_SIZE);
 
+  const campoData = campoDataPrincipal();
   const partes = [];
   rowsPagina.forEach((r, i) => {
     partes.push(`
       <tr class="linha-descarte" data-idx="${i}">
-        <td>${r.data_mql ?? "—"}</td>
+        <td>${r[campoData] ?? "—"}</td>
         <td>${escapeHtml(r.empresa) || "—"}</td>
         <td>${escapeHtml(r.sdr) || "—"}</td>
         <td>${escapeHtml(r.etapa_descarte) || "—"}</td>
@@ -595,6 +615,131 @@ function renderMotivosIncorretos(rows) {
     () => { paginaMotivosIncorretos--; renderMotivosIncorretos(rows); },
     () => { paginaMotivosIncorretos++; renderMotivosIncorretos(rows); }
   );
+}
+
+// Painel "Comparacao Mensal" (pedido do Pierre em 2026-07-09): evolucao da quantidade de
+// descartes/perdas mes a mes + quais motivos estao subindo/descendo, para avaliar se os planos
+// de acao em cima de cada motivo estao surtindo efeito. Deriva do mesmo rowsBase da aba
+// Descartes (respeita data/equipe/etapa/categoria), igual ao padrao ja usado em Motivos
+// Incorretos -- nao e uma query separada.
+function agruparPorMes(rows) {
+  const campo = campoDataPrincipal();
+  const porMes = {};
+  rows.forEach((r) => {
+    const mes = (r[campo] || "").slice(0, 7);
+    if (!mes) return;
+    porMes[mes] = (porMes[mes] || 0) + 1;
+  });
+  return porMes;
+}
+
+function agruparMotivoPorMes(rows) {
+  const campo = campoDataPrincipal();
+  const out = {};
+  rows.forEach((r) => {
+    const mes = (r[campo] || "").slice(0, 7);
+    const motivo = r.motivo_registrado_micro;
+    if (!mes || !motivo) return;
+    out[motivo] = out[motivo] || {};
+    out[motivo][mes] = (out[motivo][mes] || 0) + 1;
+  });
+  return out;
+}
+
+function renderMensalVolume(porMes) {
+  const el = document.getElementById("mensalVolume");
+  const resumoEl = document.getElementById("mensalResumo");
+  const meses = Object.keys(porMes).sort();
+
+  if (meses.length === 0) {
+    resumoEl.innerHTML = "";
+    el.innerHTML = `<div class="empty">Sem dados no periodo selecionado.</div>`;
+    return;
+  }
+
+  const mesAtual = meses[meses.length - 1];
+  const mesAnterior = meses.length > 1 ? meses[meses.length - 2] : null;
+  const countAtual = porMes[mesAtual];
+  resumoEl.innerHTML = mesAnterior
+    ? `<span><strong>${countAtual}</strong> ${rotuloResultado().toLowerCase()}(s) em ${mesLabel(mesAtual + "-01")}</span>
+       <span>Mes anterior (${mesLabel(mesAnterior + "-01")}): <strong>${porMes[mesAnterior]}</strong></span>`
+    : `<span><strong>${countAtual}</strong> ${rotuloResultado().toLowerCase()}(s) em ${mesLabel(mesAtual + "-01")} — aguardando o mes seguinte para comparar</span>`;
+
+  const max = Math.max(...meses.map((m) => porMes[m]));
+  el.innerHTML = meses
+    .map((m, i) => {
+      const count = porMes[m];
+      const anterior = i > 0 ? porMes[meses[i - 1]] : null;
+      let deltaTxt = "";
+      if (anterior !== null) {
+        const diff = count - anterior;
+        const pctDiff = anterior ? Math.round((diff / anterior) * 1000) / 10 : null;
+        const seta = diff > 0 ? "▲" : diff < 0 ? "▼" : "—";
+        const cor = diff > 0 ? "var(--operacao)" : diff < 0 ? "var(--qualidade)" : "var(--muted)";
+        deltaTxt = `<span style="color:${cor}; margin-left:8px; font-size:12px;">${seta} ${diff > 0 ? "+" : ""}${diff}${pctDiff !== null ? ` (${pctDiff > 0 ? "+" : ""}${pctDiff}%)` : ""}</span>`;
+      }
+      return `
+      <div class="bar-row">
+        <div class="bar-label">${mesLabel(m + "-01")}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct(count, max)}%;background:#6ea8fe"></div></div>
+        <div class="bar-pct" style="width:auto">${count}${deltaTxt}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+function renderMotivosTendencia(motivoPorMes) {
+  const elAlta = document.getElementById("motivosAlta");
+  const elQueda = document.getElementById("motivosQueda");
+
+  const todosMeses = new Set();
+  Object.values(motivoPorMes).forEach((porMes) => Object.keys(porMes).forEach((m) => todosMeses.add(m)));
+  const meses = [...todosMeses].sort();
+
+  if (meses.length < 2) {
+    elAlta.innerHTML = `<div class="empty">Aguardando o segundo mes completo de dados para comparar tendencia por motivo (hoje so ha ${meses.length} mes${meses.length === 1 ? "" : "es"} disponivel${meses.length === 1 ? "" : "eis"}).</div>`;
+    elQueda.innerHTML = "";
+    return;
+  }
+
+  const mesAtual = meses[meses.length - 1];
+  const mesAnterior = meses[meses.length - 2];
+  const deltas = Object.entries(motivoPorMes)
+    .map(([motivo, porMes]) => {
+      const atual = porMes[mesAtual] || 0;
+      const anterior = porMes[mesAnterior] || 0;
+      return { motivo, atual, anterior, diff: atual - anterior };
+    })
+    .filter((d) => d.atual > 0 || d.anterior > 0);
+
+  const subindo = deltas.filter((d) => d.diff > 0).sort((a, b) => b.diff - a.diff).slice(0, 5);
+  const caindo = deltas.filter((d) => d.diff < 0).sort((a, b) => a.diff - b.diff).slice(0, 5);
+
+  const renderLista = (lista, cor) =>
+    lista.length === 0
+      ? `<div class="empty">Nenhum motivo com variacao nesse sentido.</div>`
+      : lista
+          .map(
+            (d) => `
+      <div class="bar-row">
+        <div class="bar-label" style="width:240px">${escapeHtml(d.motivo)}</div>
+        <div class="bar-pct" style="width:auto; text-align:left; color:${cor}">${d.anterior} → ${d.atual} (${d.diff > 0 ? "+" : ""}${d.diff})</div>
+      </div>`
+          )
+          .join("");
+
+  document.getElementById("headerMotivosAlta").textContent =
+    `Motivos em alta (${mesLabel(mesAnterior + "-01")} → ${mesLabel(mesAtual + "-01")})`;
+  document.getElementById("headerMotivosQueda").textContent =
+    `Motivos em queda (${mesLabel(mesAnterior + "-01")} → ${mesLabel(mesAtual + "-01")})`;
+  elAlta.innerHTML = renderLista(subindo, "var(--operacao)");
+  elQueda.innerHTML = renderLista(caindo, "var(--qualidade)");
+}
+
+function renderComparacaoMensal(rows) {
+  document.getElementById("headerMensalVolume").textContent = `Volume de ${rotuloResultado().toLowerCase()}s por mes`;
+  renderMensalVolume(agruparPorMes(rows));
+  renderMotivosTendencia(agruparMotivoPorMes(rows));
 }
 
 function defaultDates() {
@@ -649,9 +794,11 @@ async function carregarDados() {
   const etapaEscolhida = document.getElementById("filtroEtapa").value;
 
   try {
-    // Data de referencia = data_mql (Data - Entrada MQL), nao data_descarte -- confirmado
-    // em 2026-07-07 contra o relatorio nativo do HubSpot que Pierre usa como referencia.
-    const filtrosDataMql = [`data_mql=gte.${de}`, `data_mql=lte.${ate}`];
+    // Data de referencia = data_mql (Data - Entrada MQL) para SDR, confirmado em 2026-07-07
+    // contra o relatorio nativo do HubSpot -- mas para Vendas e data_descarte (data_perdido),
+    // ver campoDataPrincipal() acima.
+    const campoData = campoDataPrincipal();
+    const filtrosDataMql = [`${campoData}=gte.${de}`, `${campoData}=lte.${ate}`];
     const filtrosDataReports = [`report_date=gte.${de}`, `report_date=lte.${ate}`, `equipe=eq.${equipeAtual}`];
     const filtroCategoria = categoria ? [`classificacao=eq.${categoria}`] : [];
     const etapasFiltro = etapaEscolhida ? [etapaEscolhida] : EQUIPES[equipeAtual];
@@ -665,7 +812,7 @@ async function carregarDados() {
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo].join("&")}&order=data_mql.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo].join("&")}&order=${campoData}.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
@@ -696,6 +843,7 @@ async function carregarDados() {
     renderAlertas(reports);
     renderTabela(rows);
     renderMotivosIncorretos(rowsMotivosIncorretos);
+    renderComparacaoMensal(rowsBase);
 
     subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
   } catch (err) {
@@ -827,6 +975,19 @@ function rotuloResponsavel() {
 function rotuloResultado() {
   return equipeAtual === "Vendas" ? "Perda" : "Descarte";
 }
+// Pedido do Pierre em 2026-07-10: para Vendas, o mes que importa e quando o deal foi PERDIDO
+// (data_descarte guarda data_perdido, ver dailyPerdas.ts), nao quando entrou como MQL --
+// negociacoes levam semanas/meses para avancar, entao data_mql de um deal perdido em julho
+// costuma ser de meses antes (confirmado ao vivo: 109 dos 133 deals de perda tem data_mql
+// anterior a julho/2026). Usar data_mql para Vendas fazia o filtro padrao (De=01/07) excluir
+// a maioria dos deals de perda reais do mes, mesmo com o backfill correto ja rodado no banco.
+// SDR continua em data_mql (ja validado contra o relatorio nativo do HubSpot).
+function campoDataPrincipal() {
+  return equipeAtual === "Vendas" ? "data_descarte" : "data_mql";
+}
+function labelDataPrincipal() {
+  return equipeAtual === "Vendas" ? "Data (Perda)" : "Data (Entrada MQL)";
+}
 
 function renderEquipeToggle() {
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
@@ -834,6 +995,8 @@ function renderEquipeToggle() {
   });
   document.getElementById("thResponsavel").textContent = rotuloResponsavel();
   document.getElementById("thResponsavelMI").textContent = rotuloResponsavel();
+  document.getElementById("thDataPrincipal").textContent = labelDataPrincipal();
+  document.getElementById("thDataPrincipalMI").textContent = labelDataPrincipal();
   document.getElementById("headerDescartes").textContent = `${rotuloResultado()}s no período`;
   document.getElementById("labelFiltroMotivo").textContent = `Motivo de ${rotuloResultado().toLowerCase()}`;
 }
@@ -853,6 +1016,7 @@ function renderTabAtiva() {
   document.getElementById("tabDescartes").classList.toggle("ativo", tabAtiva === "descartes");
   document.getElementById("tabAlertas").classList.toggle("ativo", tabAtiva === "alertas");
   document.getElementById("tabMotivosIncorretos").classList.toggle("ativo", tabAtiva === "motivosIncorretos");
+  document.getElementById("tabComparacaoMensal").classList.toggle("ativo", tabAtiva === "comparacaoMensal");
 }
 
 function selecionarTab(tab) {
