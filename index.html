@@ -919,9 +919,12 @@ function renderCardSintese(g, tipo) {
 // externo (HubSpot) e poderia conter aspas ou outros caracteres que quebrariam um atributo
 // escapado ingenuamente (escapeHtml so escapa para contexto de texto, nao de atributo).
 //
-// agruparPorEquipe=true (Operacao/Qualidade/Estrutural-Processo): separa em blocos SDR/Vendas
-// -- pedido do Pierre em 2026-07-10 apos a lista ficar grande demais misturando tudo.
-function renderSinteseSecao(containerId, grupos, tipo, agruparPorEquipe) {
+// modoAgrupamento: "equipe" (Operacao: blocos SDR/Vendas) ou "regiao" (Qualidade/Estrutural:
+// blocos Brasil/LATAM, pedido do Pierre em 2026-07-10 pra ficar consistente com a exportacao
+// XLSX, que agora separa Qualidade/Estrutural em abas por regiao em vez de por equipe) ou
+// null/false (sem blocos). Mantem a mesma estrutura visual em ambos os casos, so muda o
+// criterio de divisao.
+function renderSinteseSecao(containerId, grupos, tipo, modoAgrupamento) {
   const el = document.getElementById(containerId);
   if (!grupos || grupos.length === 0) {
     el.innerHTML = `<div class="empty">Sem dados no periodo.</div>`;
@@ -929,12 +932,17 @@ function renderSinteseSecao(containerId, grupos, tipo, agruparPorEquipe) {
   }
 
   let html = "";
-  const blocos = agruparPorEquipe
-    ? ["SDR", "Vendas"].map((equipe) => ({ equipe, grupos: grupos.filter((g) => g.equipe === equipe) })).filter((b) => b.grupos.length > 0)
-    : [{ equipe: null, grupos }];
+  let blocos;
+  if (modoAgrupamento === "equipe") {
+    blocos = ["SDR", "Vendas"].map((equipe) => ({ titulo: equipe, grupos: grupos.filter((g) => g.equipe === equipe) })).filter((b) => b.grupos.length > 0);
+  } else if (modoAgrupamento === "regiao") {
+    blocos = ["Brasil", "LATAM"].map((regiao) => ({ titulo: regiao, grupos: grupos.filter((g) => g.regiao === regiao) })).filter((b) => b.grupos.length > 0);
+  } else {
+    blocos = [{ titulo: null, grupos }];
+  }
 
   blocos.forEach((bloco) => {
-    if (bloco.equipe) html += `<h3 class="bloco-equipe-titulo">${bloco.equipe}</h3>`;
+    if (bloco.titulo) html += `<h3 class="bloco-equipe-titulo">${bloco.titulo}</h3>`;
     html += bloco.grupos.map((g) => renderCardSintese(g, tipo)).join("");
   });
   el.innerHTML = html;
@@ -970,19 +978,23 @@ async function carregarRelatorioSemanal() {
       return;
     }
     const { periodo_inicio, periodo_fim, report_json } = rows[0];
+    // Pedido do Pierre em 2026-07-10 (terceira rodada): clareza do periodo pra nao confundir
+    // relatorios de semanas/meses diferentes -- mesmo rotulo usado no titulo do XLSX.
     resumoEl.innerHTML = `
-      <span>Período: <strong>${periodo_inicio}</strong> a <strong>${periodo_fim}</strong></span>
+      <span><strong>${rotuloPeriodo(periodoRelatorioAtual, periodo_inicio, periodo_fim)}</strong></span>
       <span><strong>${report_json.total_operacao}</strong> deal(s) de operação</span>
       <span><strong>${report_json.total_qualidade}</strong> deal(s) de qualidade</span>
       <span><strong>${report_json.total_estrutural ?? 0}</strong> deal(s) de estrutural</span>
     `;
-    renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao", true);
-    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade", true);
+    renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao", "equipe");
+    // Qualidade e Estrutural agrupam por REGIAO no dashboard agora, igual a exportacao XLSX
+    // (antes agrupavam por equipe) -- pedido do Pierre pra manter as duas visoes consistentes.
+    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade", "regiao");
     // Relatorios gerados antes de 2026-07-10 nao tem o campo "estrutural" -- trata como
     // vazio em vez de quebrar (report_json.estrutural pode ser undefined nesses casos).
     const estrutural = report_json.estrutural || [];
-    renderSinteseSecao("relatorioEstruturalProduto", estrutural.filter((g) => g.destino === "Produto"), "estrutural", false);
-    renderSinteseSecao("relatorioEstruturalProcesso", estrutural.filter((g) => g.destino !== "Produto"), "estrutural", true);
+    renderSinteseSecao("relatorioEstruturalProduto", estrutural.filter((g) => g.destino === "Produto"), "estrutural", "regiao");
+    renderSinteseSecao("relatorioEstruturalProcesso", estrutural.filter((g) => g.destino !== "Produto"), "estrutural", "regiao");
     ultimoRelatorioSemanalCarregado = { periodo_inicio, periodo_fim, report_json };
   } catch (err) {
     resumoEl.innerHTML = `<div class="empty">Erro ao carregar: ${err.message}</div>`;
@@ -998,24 +1010,29 @@ function selecionarPeriodoRelatorio(periodo) {
   carregarRelatorioSemanal();
 }
 
-// Exportacao XLSX do relatorio semanal/mensal -- pedido do Pierre em 2026-07-10 (segunda
-// rodada de ajuste): Operacao vira DUAS ABAS SEPARADAS (Brasil e LATAM, "nao misturar"),
-// Qualidade e Estrutural ficam numa aba so cada, com blocos Brasil (topo) e LATAM (embaixo).
-// Layout "bacana": cabecalho com fundo escuro, blocos de secao mesclados numa faixa colorida,
-// e as colunas de texto longo (sintese/exemplos/plano de acao) com quebra de linha habilitada
-// (wrap text) pra aparecer tudo dentro da celula sem cortar -- usa xlsx-js-style, que grava
-// esse estilo de verdade no arquivo (a xlsx padrao nao grava, ver comentario na tag <script>).
+// Exportacao XLSX do relatorio semanal/mensal -- pedido do Pierre em 2026-07-10 (terceira
+// rodada de ajuste): AGORA TODAS as tres classificacoes (Operacao, Qualidade, Estrutural)
+// viram DUAS ABAS cada, uma por regiao (Brasil/LATAM) -- "nao misturar" -- em vez de blocos
+// dentro de uma aba so. Dentro de cada aba, Operacao ainda separa em blocos SDR/Vendas.
+// Toda aba tambem ganha uma linha de PERIODO bem visivel no topo (mesclada, destacada) e o
+// nome do arquivo deixa claro se e Semanal/Mensal e o intervalo de datas -- pedido explicito
+// do Pierre pra nao confundir relatorios de semanas diferentes ao longo do tempo.
+//
+// Layout "bacana": cabecalho com fundo escuro, blocos de equipe mesclados numa faixa colorida,
+// colunas de texto longo (sintese/exemplos/plano de acao) com quebra de linha habilitada (wrap
+// text) pra aparecer tudo dentro da celula sem cortar -- usa xlsx-js-style, que grava esse
+// estilo de verdade no arquivo (a xlsx padrao nao grava, ver comentario na tag <script>).
 const BORDA_FINA = { style: "thin", color: { rgb: "9CA3AF" } };
+const ESTILO_TITULO_PERIODO = {
+  font: { bold: true, sz: 14, color: { rgb: "FFFFFF" } },
+  fill: { fgColor: { rgb: "111827" } },
+  alignment: { vertical: "center", horizontal: "center" },
+};
 const ESTILO_CABECALHO = {
   font: { bold: true, color: { rgb: "FFFFFF" } },
   fill: { fgColor: { rgb: "1F2937" } },
   alignment: { vertical: "center", horizontal: "center", wrapText: true },
   border: { top: BORDA_FINA, bottom: BORDA_FINA, left: BORDA_FINA, right: BORDA_FINA },
-};
-const ESTILO_BLOCO_REGIAO = {
-  font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } },
-  fill: { fgColor: { rgb: "2563EB" } },
-  alignment: { vertical: "center", horizontal: "left" },
 };
 const ESTILO_BLOCO_EQUIPE = {
   font: { bold: true, color: { rgb: "1F2937" } },
@@ -1029,11 +1046,17 @@ const ESTILO_PLANO_ACAO = { alignment: { wrapText: true, vertical: "top" }, fill
 // itens: [{ bloco: "titulo", estilo }] (linha de secao mesclada) ou [{ valores: [...] }] (linha
 // de dado). `colunas`: [{ titulo, largura, estilo }] -- o estilo da coluna e aplicado nas
 // linhas de dado (nao nas de bloco, que usam sempre o estilo do proprio bloco mesclado).
-function montarPlanilha(colunas, itens) {
-  const aoa = [colunas.map((c) => c.titulo)];
+// `tituloTopo`: texto do periodo, vira uma linha mesclada acima do cabecalho de colunas.
+function montarPlanilha(colunas, itens, tituloTopo) {
+  const aoa = [];
   const merges = [];
-  const infoLinhas = [];
 
+  aoa.push([tituloTopo, ...new Array(colunas.length - 1).fill("")]);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: colunas.length - 1 } });
+
+  aoa.push(colunas.map((c) => c.titulo));
+
+  const infoLinhas = [];
   itens.forEach((item) => {
     if (item.bloco !== undefined) {
       const linha = new Array(colunas.length).fill("");
@@ -1050,19 +1073,29 @@ function montarPlanilha(colunas, itens) {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = colunas.map((c) => ({ wch: c.largura }));
   ws["!merges"] = merges;
+  ws["!rows"] = [{ hpt: 26 }]; // linha do titulo de periodo um pouco mais alta
 
+  // Linha 0 = titulo de periodo (so a celula A0 existe no aoa, mas o merge cobre todas -- as
+  // demais celulas vazias do merge tambem precisam do estilo pra pintar a faixa inteira).
+  for (let c = 0; c < colunas.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[addr]) ws[addr].s = ESTILO_TITULO_PERIODO;
+    else ws[addr] = { t: "s", v: "", s: ESTILO_TITULO_PERIODO };
+  }
+
+  // Linha 1 = cabecalho de colunas.
   colunas.forEach((c, ci) => {
-    const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
+    const addr = XLSX.utils.encode_cell({ r: 1, c: ci });
     if (ws[addr]) ws[addr].s = ESTILO_CABECALHO;
   });
 
   infoLinhas.forEach((info, idx) => {
-    const r = idx + 1;
+    const r = idx + 2; // +2 porque linha 0 e titulo de periodo, linha 1 e cabecalho
     if (info.bloco) {
       for (let c = 0; c < colunas.length; c++) {
         const addr = XLSX.utils.encode_cell({ r, c });
         if (ws[addr]) ws[addr].s = info.estilo;
-        else ws[addr] = { t: "s", v: "", s: info.estilo }; // celulas vazias do merge tambem precisam do estilo pra pintar a faixa inteira
+        else ws[addr] = { t: "s", v: "", s: info.estilo };
       }
     } else {
       colunas.forEach((coluna, ci) => {
@@ -1093,8 +1126,15 @@ function linhaDeGrupo(tipo, colunasChaves, g) {
   return colunasChaves.map((chave) => valoresPossiveis[chave]);
 }
 
-// Operacao: DUAS ABAS (uma por regiao, "nao misturar"), cada uma com blocos SDR/Vendas.
-function construirAbaOperacaoPorRegiao(regiao, grupos) {
+function rotuloPeriodo(periodoRelatorioAtual, periodoInicio, periodoFim) {
+  const tipoLabel = periodoRelatorioAtual === "mensal" ? "Mensal" : "Semanal";
+  const [aiY, aiM, aiD] = periodoInicio.split("-");
+  const [afY, afM, afD] = periodoFim.split("-");
+  return `Relatório ${tipoLabel} — ${aiD}/${aiM}/${aiY} a ${afD}/${afM}/${afY}`;
+}
+
+// Operacao: separa em blocos SDR/Vendas dentro da aba de cada regiao.
+function construirAbaOperacaoPorRegiao(regiao, grupos, tituloTopo) {
   const colunas = [
     { titulo: "Padrão", largura: 30, estilo: ESTILO_TEXTO },
     { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
@@ -1111,23 +1151,18 @@ function construirAbaOperacaoPorRegiao(regiao, grupos) {
     doGrupo.forEach((g) => itens.push({ valores: linhaDeGrupo("operacao", chaves, g) }));
   });
   if (itens.length === 0) itens.push({ valores: ["Sem dados no período", "", "", "", ""] });
-  return montarPlanilha(colunas, itens);
+  return montarPlanilha(colunas, itens, tituloTopo);
 }
 
-// Qualidade e Estrutural: UMA ABA cada, com blocos de REGIAO (Brasil no topo, LATAM embaixo)
-// -- pedido do Pierre: sem split de equipe aqui, so por regiao; Equipe (e Destino, no caso de
-// Estrutural) ficam como coluna normal dentro de cada bloco de regiao.
-function construirAbaPorRegiao(tipo, colunas, chaves, grupos, ordenarFn) {
-  const itens = [];
-  ["Brasil", "LATAM"].forEach((regiao) => {
-    let doGrupo = grupos.filter((g) => g.regiao === regiao);
-    if (doGrupo.length === 0) return;
-    if (ordenarFn) doGrupo = ordenarFn(doGrupo);
-    itens.push({ bloco: regiao === "Brasil" ? "BRASIL" : "LATAM", estilo: ESTILO_BLOCO_REGIAO });
-    doGrupo.forEach((g) => itens.push({ valores: linhaDeGrupo(tipo, chaves, g) }));
-  });
+// Qualidade e Estrutural: uma aba por regiao (pedido do Pierre em 2026-07-10, terceira
+// rodada: "precisa separar tbm em abas brasil e latam") -- sem bloco de equipe aqui (equipe
+// vira coluna normal), so o filtro de regiao decide qual aba a linha entra.
+function construirAbaPorRegiaoSemBloco(tipo, regiao, colunas, chaves, grupos, ordenarFn, tituloTopo) {
+  let doRegiao = grupos.filter((g) => g.regiao === regiao);
+  if (ordenarFn) doRegiao = ordenarFn(doRegiao);
+  const itens = doRegiao.map((g) => ({ valores: linhaDeGrupo(tipo, chaves, g) }));
   if (itens.length === 0) itens.push({ valores: colunas.map(() => "") });
-  return montarPlanilha(colunas, itens);
+  return montarPlanilha(colunas, itens, tituloTopo);
 }
 
 function exportarRelatorioSemanalXlsx() {
@@ -1136,54 +1171,64 @@ function exportarRelatorioSemanalXlsx() {
     return;
   }
   const { periodo_inicio, periodo_fim, report_json } = ultimoRelatorioSemanalCarregado;
+  const tituloTopo = rotuloPeriodo(periodoRelatorioAtual, periodo_inicio, periodo_fim);
 
   const operacao = report_json.operacao || [];
   const qualidade = report_json.qualidade || [];
   const estrutural = report_json.estrutural || [];
 
+  const colunasQualidade = [
+    { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
+    { titulo: "Campanha", largura: 32, estilo: ESTILO_TEXTO },
+    { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+    { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
+    { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
+    { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
+  ];
+  const chavesQualidade = ["equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"];
+  const ordenarPorQuantidade = (grupos) => grupos.slice().sort((a, b) => b.quantidade - a.quantidade);
+
+  const colunasEstrutural = [
+    { titulo: "Destino", largura: 14, estilo: ESTILO_CENTRO },
+    { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
+    { titulo: "Padrão", largura: 28, estilo: ESTILO_TEXTO },
+    { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+    { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
+    { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
+    { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
+  ];
+  const chavesEstrutural = ["destino", "equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"];
+  // Produto primeiro -- e o que mais importa pro time de Produto ver rapido.
+  const ordenarEstrutural = (grupos) =>
+    grupos.slice().sort((a, b) => (a.destino === "Produto" ? -1 : 1) - (b.destino === "Produto" ? -1 : 1) || b.quantidade - a.quantidade);
+
   const livro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("Brasil", operacao), "Operação BR");
-  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("LATAM", operacao), "Operação LATAM");
+  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("Brasil", operacao, tituloTopo), "Operação BR");
+  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("LATAM", operacao, tituloTopo), "Operação LATAM");
   XLSX.utils.book_append_sheet(
     livro,
-    construirAbaPorRegiao(
-      "qualidade",
-      [
-        { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
-        { titulo: "Campanha", largura: 32, estilo: ESTILO_TEXTO },
-        { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
-        { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
-        { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
-        { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
-      ],
-      ["equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"],
-      qualidade,
-      (grupos) => grupos.slice().sort((a, b) => b.quantidade - a.quantidade)
-    ),
-    "Qualidade"
+    construirAbaPorRegiaoSemBloco("qualidade", "Brasil", colunasQualidade, chavesQualidade, qualidade, ordenarPorQuantidade, tituloTopo),
+    "Qualidade BR"
   );
   XLSX.utils.book_append_sheet(
     livro,
-    construirAbaPorRegiao(
-      "estrutural",
-      [
-        { titulo: "Destino", largura: 14, estilo: ESTILO_CENTRO },
-        { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
-        { titulo: "Padrão", largura: 28, estilo: ESTILO_TEXTO },
-        { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
-        { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
-        { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
-        { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
-      ],
-      ["destino", "equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"],
-      estrutural,
-      // Produto primeiro dentro de cada bloco de regiao -- e o que mais importa pro time de Produto ver rapido.
-      (grupos) => grupos.slice().sort((a, b) => (a.destino === "Produto" ? -1 : 1) - (b.destino === "Produto" ? -1 : 1) || b.quantidade - a.quantidade)
-    ),
-    "Estrutural"
+    construirAbaPorRegiaoSemBloco("qualidade", "LATAM", colunasQualidade, chavesQualidade, qualidade, ordenarPorQuantidade, tituloTopo),
+    "Qualidade LATAM"
+  );
+  XLSX.utils.book_append_sheet(
+    livro,
+    construirAbaPorRegiaoSemBloco("estrutural", "Brasil", colunasEstrutural, chavesEstrutural, estrutural, ordenarEstrutural, tituloTopo),
+    "Estrutural BR"
+  );
+  XLSX.utils.book_append_sheet(
+    livro,
+    construirAbaPorRegiaoSemBloco("estrutural", "LATAM", colunasEstrutural, chavesEstrutural, estrutural, ordenarEstrutural, tituloTopo),
+    "Estrutural LATAM"
   );
 
-  XLSX.writeFile(livro, `relatorio-${periodoRelatorioAtual}-${periodo_inicio}_a_${periodo_fim}.xlsx`);
+  // Nome do arquivo deixa claro o tipo de periodo e o intervalo exato -- pedido do Pierre pra
+  // nao confundir relatorios de semanas/meses diferentes ao acumular varios downloads.
+  XLSX.writeFile(livro, `relatorio-${periodoRelatorioAtual}_${periodo_inicio}_a_${periodo_fim}.xlsx`);
 }
 
 function defaultDates() {
