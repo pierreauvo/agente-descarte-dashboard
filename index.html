@@ -163,6 +163,36 @@
   }
   .btn-traducir:hover { background: rgba(46,204,113,0.18); }
   .btn-traducir.visivel { display: inline-flex; }
+  .periodo-toggle-btn {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .periodo-toggle-btn.ativo { border-color: #6ea8fe; color: var(--text); background: #16233a; }
+  .sintese-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .sintese-card .sintese-header {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px;
+  }
+  .sintese-card .sintese-chave { font-size: 14px; font-weight: 700; color: var(--text); }
+  .sintese-card .sintese-qtd { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .sintese-card .sintese-texto { font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+  .sintese-card .sintese-exemplos { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .sintese-card .sintese-exemplos a { margin-right: 10px; }
+  .plano-acao-bloco h4 {
+    margin: 0 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .plano-acao-bloco textarea {
+    width: 100%; min-height: 60px; background: #10121a; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px;
+    font-family: inherit; resize: vertical;
+  }
+  .plano-acao-bloco .plano-acao-status { font-size: 11px; color: var(--muted); margin-top: 4px; height: 14px; }
+  .plano-acao-bloco button {
+    margin-top: 6px; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: #1a2942; color: var(--text); font-size: 12px; cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -199,6 +229,7 @@
     <button data-tab="alertas">Alertas<span class="badge" id="badgeAlertas" style="display:none"></span></button>
     <button data-tab="motivosIncorretos">Motivos Incorretos<span class="badge" id="badgeMotivosIncorretos" style="display:none"></span></button>
     <button data-tab="comparacaoMensal">Comparação Mensal</button>
+    <button data-tab="relatorioSemanal">Relatório Semanal</button>
   </div>
 
   <div class="tab-pane" id="tabDescartes">
@@ -290,6 +321,22 @@
       <div class="card" id="motivosQueda"></div>
     </section>
   </div>
+
+  <div class="tab-pane" id="tabRelatorioSemanal">
+    <div style="display:flex; gap:8px; margin-bottom:16px;">
+      <button class="periodo-toggle-btn ativo" id="btnPeriodoSemanal" data-periodo="semanal">Semanal</button>
+      <button class="periodo-toggle-btn" id="btnPeriodoMensal" data-periodo="mensal">Mensal</button>
+    </div>
+    <div class="alertas-resumo" id="relatorioSemanalResumo"></div>
+    <section>
+      <h2>Operação — para o time de Vendas agir</h2>
+      <div id="relatorioOperacao"></div>
+    </section>
+    <section>
+      <h2>Qualidade por campanha — para o time de Marketing agir</h2>
+      <div id="relatorioQualidade"></div>
+    </section>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -324,7 +371,15 @@ let regiaoAtual = localStorage.getItem("discardAgentRegiao") || "Brasil";
 if (!["Brasil", "LATAM"].includes(regiaoAtual)) regiaoAtual = "Brasil";
 
 let tabAtiva = localStorage.getItem("discardAgentTab") || "descartes";
-if (!["descartes", "alertas", "motivosIncorretos", "comparacaoMensal"].includes(tabAtiva)) tabAtiva = "descartes";
+if (!["descartes", "alertas", "motivosIncorretos", "comparacaoMensal", "relatorioSemanal"].includes(tabAtiva)) tabAtiva = "descartes";
+
+// Relatorio Semanal/Mensal (pedido do Pierre em 2026-07-10): sintese de padroes de OPERACAO
+// (por equipe+subcategoria) e QUALIDADE (por campanha), gerado toda sexta via
+// src/cron/weeklyReport.ts. Independente do toggle de equipe/regiao -- e uma visao consolidada
+// de tudo, nao filtrada por SDR/Vendas/Brasil/LATAM.
+let periodoRelatorioAtual = localStorage.getItem("discardAgentPeriodoRelatorio") || "semanal";
+if (!["semanal", "mensal"].includes(periodoRelatorioAtual)) periodoRelatorioAtual = "semanal";
+let planosDeAcaoCache = {};
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -763,6 +818,129 @@ function renderComparacaoMensal(rows) {
   renderMotivosTendencia(agruparMotivoPorMes(rows));
 }
 
+// Relatorio Semanal (pedido do Pierre em 2026-07-10): sintese por padrao/campanha gerada por
+// src/cron/weeklyReport.ts (toda sexta-feira via GitHub Actions), com uma area de "plano de
+// acao" editavel direto no dashboard ao lado de cada padrao -- fica salvo em planos_de_acao e
+// reaparece nas proximas geracoes do relatorio ate ser atualizado de novo.
+async function carregarPlanosDeAcao() {
+  const rows = await supabaseGet("planos_de_acao?select=tipo,chave,texto");
+  planosDeAcaoCache = {};
+  rows.forEach((r) => {
+    planosDeAcaoCache[`${r.tipo}|${r.chave}`] = r.texto;
+  });
+}
+
+async function salvarPlanoDeAcao(tipo, chave, texto, statusEl) {
+  statusEl.textContent = "Salvando...";
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/planos_de_acao`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({ tipo, chave, texto, atualizado_em: new Date().toISOString() }),
+    });
+    if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+    planosDeAcaoCache[`${tipo}|${chave}`] = texto;
+    statusEl.textContent = "Salvo.";
+    setTimeout(() => {
+      statusEl.textContent = "";
+    }, 2500);
+  } catch (err) {
+    statusEl.textContent = `Erro ao salvar: ${err.message}`;
+    console.error(err);
+  }
+}
+
+// IMPORTANTE: o `chave` de cada grupo (ex: nome de campanha) e usado via closure sobre o
+// array `grupos`, nunca interpolado dentro de um atributo HTML -- campanha_origem vem de dado
+// externo (HubSpot) e poderia conter aspas ou outros caracteres que quebrariam um atributo
+// escapado ingenuamente (escapeHtml so escapa para contexto de texto, nao de atributo).
+function renderSinteseSecao(containerId, grupos, tipo) {
+  const el = document.getElementById(containerId);
+  if (!grupos || grupos.length === 0) {
+    el.innerHTML = `<div class="empty">Sem dados no periodo.</div>`;
+    return;
+  }
+  el.innerHTML = grupos
+    .map((g, i) => {
+      const planoSalvo = planosDeAcaoCache[`${tipo}|${g.chave}`] || "";
+      const exemplosHtml = (g.exemplos || [])
+        .map((ex) =>
+          ex.link_hubspot
+            ? `<a href="${ex.link_hubspot}" target="_blank" rel="noopener">${escapeHtml(ex.empresa || ex.deal_id)} →</a>`
+            : escapeHtml(ex.empresa || ex.deal_id)
+        )
+        .join(" ");
+      return `
+      <div class="sintese-card">
+        <div class="sintese-header">
+          <div class="sintese-chave">${escapeHtml(g.chave)}</div>
+          <div class="sintese-qtd">${g.quantidade} deal${g.quantidade === 1 ? "" : "s"}</div>
+        </div>
+        <p class="sintese-texto">${escapeHtml(g.sintese)}</p>
+        ${exemplosHtml ? `<div class="sintese-exemplos">Exemplos: ${exemplosHtml}</div>` : ""}
+        <div class="plano-acao-bloco" data-idx="${i}">
+          <h4>Plano de ação</h4>
+          <textarea placeholder="O que esta sendo feito para resolver isso?">${escapeHtml(planoSalvo)}</textarea>
+          <button>Salvar plano</button>
+          <div class="plano-acao-status"></div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  el.querySelectorAll(".plano-acao-bloco").forEach((bloco) => {
+    const g = grupos[Number(bloco.dataset.idx)];
+    const textarea = bloco.querySelector("textarea");
+    const statusEl = bloco.querySelector(".plano-acao-status");
+    bloco.querySelector("button").addEventListener("click", () => {
+      salvarPlanoDeAcao(tipo, g.chave, textarea.value, statusEl);
+    });
+  });
+}
+
+async function carregarRelatorioSemanal() {
+  const resumoEl = document.getElementById("relatorioSemanalResumo");
+  const opEl = document.getElementById("relatorioOperacao");
+  const qualEl = document.getElementById("relatorioQualidade");
+  resumoEl.innerHTML = "Carregando...";
+  try {
+    await carregarPlanosDeAcao();
+    const rows = await supabaseGet(
+      `weekly_reports?select=periodo_inicio,periodo_fim,report_json&tipo_periodo=eq.${periodoRelatorioAtual}&order=periodo_fim.desc&limit=1`
+    );
+    if (!rows.length) {
+      resumoEl.innerHTML = "";
+      opEl.innerHTML = `<div class="empty">Nenhum relatorio ${periodoRelatorioAtual} gerado ainda.</div>`;
+      qualEl.innerHTML = "";
+      return;
+    }
+    const { periodo_inicio, periodo_fim, report_json } = rows[0];
+    resumoEl.innerHTML = `
+      <span>Período: <strong>${periodo_inicio}</strong> a <strong>${periodo_fim}</strong></span>
+      <span><strong>${report_json.total_operacao}</strong> deal(s) de operação</span>
+      <span><strong>${report_json.total_qualidade}</strong> deal(s) de qualidade</span>
+    `;
+    renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao");
+    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade");
+  } catch (err) {
+    resumoEl.innerHTML = `<div class="empty">Erro ao carregar: ${err.message}</div>`;
+    console.error(err);
+  }
+}
+
+function selecionarPeriodoRelatorio(periodo) {
+  periodoRelatorioAtual = periodo;
+  localStorage.setItem("discardAgentPeriodoRelatorio", periodo);
+  document.getElementById("btnPeriodoSemanal").classList.toggle("ativo", periodo === "semanal");
+  document.getElementById("btnPeriodoMensal").classList.toggle("ativo", periodo === "mensal");
+  carregarRelatorioSemanal();
+}
+
 function defaultDates() {
   // Pedido do Pierre: visao aberta a partir de 01/07/2026, sem precisar ajustar o "Ate"
   // conforme o tempo passa. 2030-12-31 funciona como "sem limite pratico" -- so mostra
@@ -1089,12 +1267,17 @@ function renderTabAtiva() {
   document.getElementById("tabAlertas").classList.toggle("ativo", tabAtiva === "alertas");
   document.getElementById("tabMotivosIncorretos").classList.toggle("ativo", tabAtiva === "motivosIncorretos");
   document.getElementById("tabComparacaoMensal").classList.toggle("ativo", tabAtiva === "comparacaoMensal");
+  document.getElementById("tabRelatorioSemanal").classList.toggle("ativo", tabAtiva === "relatorioSemanal");
 }
 
 function selecionarTab(tab) {
   tabAtiva = tab;
   localStorage.setItem("discardAgentTab", tab);
   renderTabAtiva();
+  // Carregamento preguicoso: so busca o relatorio semanal/mensal quando a aba e aberta pela
+  // primeira vez (nao faz parte do carregarDados() principal, que roda a cada mudanca de
+  // filtro/equipe/regiao -- o relatorio semanal e independente disso).
+  if (tab === "relatorioSemanal") carregarRelatorioSemanal();
 }
 
 function main() {
@@ -1122,6 +1305,8 @@ function main() {
   document.querySelectorAll("#mainTabs button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarTab(btn.dataset.tab));
   });
+  document.getElementById("btnPeriodoSemanal").addEventListener("click", () => selecionarPeriodoRelatorio("semanal"));
+  document.getElementById("btnPeriodoMensal").addEventListener("click", () => selecionarPeriodoRelatorio("mensal"));
 
   renderRegiaoToggle();
   renderEquipeToggle();
@@ -1130,6 +1315,11 @@ function main() {
   carregarDados();
   carregarStatusAtualizacao();
   carregarStatusIntegridade();
+  // Sincroniza o toggle Semanal/Mensal com o valor persistido (o HTML tem "semanal" marcado
+  // como padrao) e ja carrega o relatorio se essa for a aba ativa ao abrir a pagina.
+  document.getElementById("btnPeriodoSemanal").classList.toggle("ativo", periodoRelatorioAtual === "semanal");
+  document.getElementById("btnPeriodoMensal").classList.toggle("ativo", periodoRelatorioAtual === "mensal");
+  if (tabAtiva === "relatorioSemanal") carregarRelatorioSemanal();
   setInterval(carregarStatusAtualizacao, 5 * 60 * 1000);
   setInterval(carregarStatusIntegridade, 5 * 60 * 1000);
 }
