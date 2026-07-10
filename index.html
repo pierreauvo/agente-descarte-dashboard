@@ -357,7 +357,11 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- xlsx-js-style (fork da SheetJS community edition com suporte a escrita de estilo de
+     celula -- wrap text, fundo, negrito, mesclagem) -- a xlsx@0.18.5 padrao NAO grava estilo
+     custom (confirmado testando: alignment/wrapText nao persistia no arquivo gerado). Mesma
+     API global `XLSX`, drop-in replacement. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style/dist/xlsx.bundle.js"></script>
 <script>
 const SUPABASE_URL = "https://exxqtkcmwzjypelyjpmo.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4eHF0a2Ntd3pqeXBlbHlqcG1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMzg4NzgsImV4cCI6MjA5NDcxNDg3OH0.tQIy8HBxuzR6gkwDPeD3PnAv-mt0hjhl18epYlEJ_9c";
@@ -994,26 +998,136 @@ function selecionarPeriodoRelatorio(periodo) {
   carregarRelatorioSemanal();
 }
 
-// Exportacao XLSX do relatorio semanal/mensal (pedido do Pierre em 2026-07-10): abas por
-// classificacao (Operacao/Qualidade/Estrutural), com blocos SDR/Vendas dentro de cada aba
-// (Estrutural tem um bloco extra "Produto" sem split de equipe, ja que os motivos que caem
-// ali sao especificos de uma equipe cada -- "Quer integração" e so SDR, "Sistema não atende"
-// e so Vendas). Colunas incluem regiao, sintese completa, exemplos e o plano de acao salvo.
-function construirAbaRelatorio(tipo, blocos) {
-  const aoa = [["Equipe", "Região", "Padrão/Campanha", "Quantidade", "Síntese", "Exemplos", "Plano de Ação"]];
-  blocos.forEach(({ titulo, grupos }) => {
-    if (titulo) aoa.push([titulo]);
-    grupos.forEach((g) => {
-      const exemplosTxt = (g.exemplos || [])
-        .map((ex) => `${ex.empresa || ex.deal_id}${ex.link_hubspot ? " — " + ex.link_hubspot : ""}`)
-        .join("\n");
-      const planoTxt = planosDeAcaoCache[`${tipo}|${chaveCompostaPlano(g)}`] || "";
-      aoa.push([g.equipe, g.regiao, g.chave, g.quantidade, g.sintese, exemplosTxt, planoTxt]);
-    });
+// Exportacao XLSX do relatorio semanal/mensal -- pedido do Pierre em 2026-07-10 (segunda
+// rodada de ajuste): Operacao vira DUAS ABAS SEPARADAS (Brasil e LATAM, "nao misturar"),
+// Qualidade e Estrutural ficam numa aba so cada, com blocos Brasil (topo) e LATAM (embaixo).
+// Layout "bacana": cabecalho com fundo escuro, blocos de secao mesclados numa faixa colorida,
+// e as colunas de texto longo (sintese/exemplos/plano de acao) com quebra de linha habilitada
+// (wrap text) pra aparecer tudo dentro da celula sem cortar -- usa xlsx-js-style, que grava
+// esse estilo de verdade no arquivo (a xlsx padrao nao grava, ver comentario na tag <script>).
+const BORDA_FINA = { style: "thin", color: { rgb: "9CA3AF" } };
+const ESTILO_CABECALHO = {
+  font: { bold: true, color: { rgb: "FFFFFF" } },
+  fill: { fgColor: { rgb: "1F2937" } },
+  alignment: { vertical: "center", horizontal: "center", wrapText: true },
+  border: { top: BORDA_FINA, bottom: BORDA_FINA, left: BORDA_FINA, right: BORDA_FINA },
+};
+const ESTILO_BLOCO_REGIAO = {
+  font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } },
+  fill: { fgColor: { rgb: "2563EB" } },
+  alignment: { vertical: "center", horizontal: "left" },
+};
+const ESTILO_BLOCO_EQUIPE = {
+  font: { bold: true, color: { rgb: "1F2937" } },
+  fill: { fgColor: { rgb: "D1D5DB" } },
+  alignment: { vertical: "center", horizontal: "left" },
+};
+const ESTILO_TEXTO = { alignment: { wrapText: true, vertical: "top" } };
+const ESTILO_CENTRO = { alignment: { wrapText: true, vertical: "top", horizontal: "center" } };
+const ESTILO_PLANO_ACAO = { alignment: { wrapText: true, vertical: "top" }, fill: { fgColor: { rgb: "FEF9C3" } } };
+
+// itens: [{ bloco: "titulo", estilo }] (linha de secao mesclada) ou [{ valores: [...] }] (linha
+// de dado). `colunas`: [{ titulo, largura, estilo }] -- o estilo da coluna e aplicado nas
+// linhas de dado (nao nas de bloco, que usam sempre o estilo do proprio bloco mesclado).
+function montarPlanilha(colunas, itens) {
+  const aoa = [colunas.map((c) => c.titulo)];
+  const merges = [];
+  const infoLinhas = [];
+
+  itens.forEach((item) => {
+    if (item.bloco !== undefined) {
+      const linha = new Array(colunas.length).fill("");
+      linha[0] = item.bloco;
+      aoa.push(linha);
+      merges.push({ s: { r: aoa.length - 1, c: 0 }, e: { r: aoa.length - 1, c: colunas.length - 1 } });
+      infoLinhas.push({ bloco: true, estilo: item.estilo });
+    } else {
+      aoa.push(item.valores);
+      infoLinhas.push({ bloco: false });
+    }
   });
+
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [10, 10, 30, 12, 70, 40, 40].map((wch) => ({ wch }));
+  ws["!cols"] = colunas.map((c) => ({ wch: c.largura }));
+  ws["!merges"] = merges;
+
+  colunas.forEach((c, ci) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c: ci });
+    if (ws[addr]) ws[addr].s = ESTILO_CABECALHO;
+  });
+
+  infoLinhas.forEach((info, idx) => {
+    const r = idx + 1;
+    if (info.bloco) {
+      for (let c = 0; c < colunas.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        if (ws[addr]) ws[addr].s = info.estilo;
+        else ws[addr] = { t: "s", v: "", s: info.estilo }; // celulas vazias do merge tambem precisam do estilo pra pintar a faixa inteira
+      }
+    } else {
+      colunas.forEach((coluna, ci) => {
+        const addr = XLSX.utils.encode_cell({ r, c: ci });
+        if (ws[addr]) ws[addr].s = coluna.estilo || ESTILO_TEXTO;
+      });
+    }
+  });
+
   return ws;
+}
+
+function formatarExemplos(exemplos) {
+  return (exemplos || []).map((ex) => `${ex.empresa || ex.deal_id}${ex.link_hubspot ? " — " + ex.link_hubspot : ""}`).join("\n");
+}
+
+function linhaDeGrupo(tipo, colunasChaves, g) {
+  const planoTxt = planosDeAcaoCache[`${tipo}|${chaveCompostaPlano(g)}`] || "";
+  const valoresPossiveis = {
+    equipe: g.equipe,
+    padrao: g.chave,
+    quantidade: g.quantidade,
+    sintese: g.sintese,
+    exemplos: formatarExemplos(g.exemplos),
+    plano: planoTxt,
+    destino: g.destino || "",
+  };
+  return colunasChaves.map((chave) => valoresPossiveis[chave]);
+}
+
+// Operacao: DUAS ABAS (uma por regiao, "nao misturar"), cada uma com blocos SDR/Vendas.
+function construirAbaOperacaoPorRegiao(regiao, grupos) {
+  const colunas = [
+    { titulo: "Padrão", largura: 30, estilo: ESTILO_TEXTO },
+    { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+    { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
+    { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
+    { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
+  ];
+  const chaves = ["padrao", "quantidade", "sintese", "exemplos", "plano"];
+  const itens = [];
+  ["SDR", "Vendas"].forEach((equipe) => {
+    const doGrupo = grupos.filter((g) => g.regiao === regiao && g.equipe === equipe);
+    if (doGrupo.length === 0) return;
+    itens.push({ bloco: equipe, estilo: ESTILO_BLOCO_EQUIPE });
+    doGrupo.forEach((g) => itens.push({ valores: linhaDeGrupo("operacao", chaves, g) }));
+  });
+  if (itens.length === 0) itens.push({ valores: ["Sem dados no período", "", "", "", ""] });
+  return montarPlanilha(colunas, itens);
+}
+
+// Qualidade e Estrutural: UMA ABA cada, com blocos de REGIAO (Brasil no topo, LATAM embaixo)
+// -- pedido do Pierre: sem split de equipe aqui, so por regiao; Equipe (e Destino, no caso de
+// Estrutural) ficam como coluna normal dentro de cada bloco de regiao.
+function construirAbaPorRegiao(tipo, colunas, chaves, grupos, ordenarFn) {
+  const itens = [];
+  ["Brasil", "LATAM"].forEach((regiao) => {
+    let doGrupo = grupos.filter((g) => g.regiao === regiao);
+    if (doGrupo.length === 0) return;
+    if (ordenarFn) doGrupo = ordenarFn(doGrupo);
+    itens.push({ bloco: regiao === "Brasil" ? "BRASIL" : "LATAM", estilo: ESTILO_BLOCO_REGIAO });
+    doGrupo.forEach((g) => itens.push({ valores: linhaDeGrupo(tipo, chaves, g) }));
+  });
+  if (itens.length === 0) itens.push({ valores: colunas.map(() => "") });
+  return montarPlanilha(colunas, itens);
 }
 
 function exportarRelatorioSemanalXlsx() {
@@ -1023,20 +1137,52 @@ function exportarRelatorioSemanalXlsx() {
   }
   const { periodo_inicio, periodo_fim, report_json } = ultimoRelatorioSemanalCarregado;
 
-  const porEquipe = (lista) =>
-    ["SDR", "Vendas"].map((equipe) => ({ titulo: equipe, grupos: lista.filter((g) => g.equipe === equipe) })).filter((b) => b.grupos.length > 0);
-
+  const operacao = report_json.operacao || [];
+  const qualidade = report_json.qualidade || [];
   const estrutural = report_json.estrutural || [];
-  const naoProduto = estrutural.filter((g) => g.destino !== "Produto");
-  const blocosEstrutural = [
-    { titulo: "Produto", grupos: estrutural.filter((g) => g.destino === "Produto") },
-    ...porEquipe(naoProduto).map((b) => ({ ...b, titulo: `Processo/Dados — ${b.titulo}` })),
-  ].filter((b) => b.grupos.length > 0);
 
   const livro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("operacao", porEquipe(report_json.operacao || [])), "Operação");
-  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("qualidade", porEquipe(report_json.qualidade || [])), "Qualidade");
-  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("estrutural", blocosEstrutural), "Estrutural");
+  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("Brasil", operacao), "Operação BR");
+  XLSX.utils.book_append_sheet(livro, construirAbaOperacaoPorRegiao("LATAM", operacao), "Operação LATAM");
+  XLSX.utils.book_append_sheet(
+    livro,
+    construirAbaPorRegiao(
+      "qualidade",
+      [
+        { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
+        { titulo: "Campanha", largura: 32, estilo: ESTILO_TEXTO },
+        { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+        { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
+        { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
+        { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
+      ],
+      ["equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"],
+      qualidade,
+      (grupos) => grupos.slice().sort((a, b) => b.quantidade - a.quantidade)
+    ),
+    "Qualidade"
+  );
+  XLSX.utils.book_append_sheet(
+    livro,
+    construirAbaPorRegiao(
+      "estrutural",
+      [
+        { titulo: "Destino", largura: 14, estilo: ESTILO_CENTRO },
+        { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
+        { titulo: "Padrão", largura: 28, estilo: ESTILO_TEXTO },
+        { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+        { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
+        { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
+        { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
+      ],
+      ["destino", "equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"],
+      estrutural,
+      // Produto primeiro dentro de cada bloco de regiao -- e o que mais importa pro time de Produto ver rapido.
+      (grupos) => grupos.slice().sort((a, b) => (a.destino === "Produto" ? -1 : 1) - (b.destino === "Produto" ? -1 : 1) || b.quantidade - a.quantidade)
+    ),
+    "Estrutural"
+  );
+
   XLSX.writeFile(livro, `relatorio-${periodoRelatorioAtual}-${periodo_inicio}_a_${periodo_fim}.xlsx`);
 }
 
