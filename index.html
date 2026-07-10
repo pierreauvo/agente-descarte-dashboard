@@ -176,6 +176,15 @@
     display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px;
   }
   .sintese-card .sintese-chave { font-size: 14px; font-weight: 700; color: var(--text); }
+  .badge-regiao {
+    display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;
+    background: rgba(110,168,254,0.15); color: #6ea8fe; vertical-align: middle; margin-left: 6px;
+  }
+  .bloco-equipe-titulo {
+    font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.04em; margin: 20px 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  }
+  .bloco-equipe-titulo:first-child { margin-top: 0; }
   .sintese-card .sintese-qtd { font-size: 12px; color: var(--muted); white-space: nowrap; }
   .sintese-card .sintese-texto { font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
   .sintese-card .sintese-exemplos { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
@@ -323,9 +332,10 @@
   </div>
 
   <div class="tab-pane" id="tabRelatorioSemanal">
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <div style="display:flex; gap:8px; margin-bottom:16px; align-items:center;">
       <button class="periodo-toggle-btn ativo" id="btnPeriodoSemanal" data-periodo="semanal">Semanal</button>
       <button class="periodo-toggle-btn" id="btnPeriodoMensal" data-periodo="mensal">Mensal</button>
+      <button id="btnExportarRelatorioSemanal" style="margin-left:auto;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
     </div>
     <div class="alertas-resumo" id="relatorioSemanalResumo"></div>
     <section>
@@ -388,6 +398,8 @@ if (!["descartes", "alertas", "motivosIncorretos", "comparacaoMensal", "relatori
 let periodoRelatorioAtual = localStorage.getItem("discardAgentPeriodoRelatorio") || "semanal";
 if (!["semanal", "mensal"].includes(periodoRelatorioAtual)) periodoRelatorioAtual = "semanal";
 let planosDeAcaoCache = {};
+// Guarda o ultimo relatorio carregado pra exportacao XLSX poder usar sem re-buscar do Supabase.
+let ultimoRelatorioSemanalCarregado = null;
 
 const CATEGORIA_COLOR = {
   OPERACAO: "var(--operacao)",
@@ -863,50 +875,72 @@ async function salvarPlanoDeAcao(tipo, chave, texto, statusEl) {
   }
 }
 
-// IMPORTANTE: o `chave` de cada grupo (ex: nome de campanha) e usado via closure sobre o
-// array `grupos`, nunca interpolado dentro de um atributo HTML -- campanha_origem vem de dado
-// externo (HubSpot) e poderia conter aspas ou outros caracteres que quebrariam um atributo
-// escapado ingenuamente (escapeHtml so escapa para contexto de texto, nao de atributo).
-function renderSinteseSecao(containerId, grupos, tipo) {
-  const el = document.getElementById(containerId);
-  if (!grupos || grupos.length === 0) {
-    el.innerHTML = `<div class="empty">Sem dados no periodo.</div>`;
-    return;
-  }
-  el.innerHTML = grupos
-    .map((g, i) => {
-      const planoSalvo = planosDeAcaoCache[`${tipo}|${g.chave}`] || "";
-      const exemplosHtml = (g.exemplos || [])
-        .map((ex) =>
-          ex.link_hubspot
-            ? `<a href="${ex.link_hubspot}" target="_blank" rel="noopener">${escapeHtml(ex.empresa || ex.deal_id)} →</a>`
-            : escapeHtml(ex.empresa || ex.deal_id)
-        )
-        .join(" ");
-      return `
+// Chave composta usada como valor da coluna `chave` no banco (planos_de_acao so tem unique
+// em tipo+chave) -- precisa incluir equipe+regiao, senao "3.4 EXECUCAO DE PROCESSO" do SDR
+// Brasil colidiria com o mesmo padrao no SDR LATAM. O `g.chave` exibido no card continua so
+// o nome do padrao (mais legivel); a composta e so pra persistencia.
+function chaveCompostaPlano(g) {
+  return `${g.equipe} | ${g.regiao} | ${g.chave}`;
+}
+
+function renderCardSintese(g, tipo) {
+  const chaveDb = chaveCompostaPlano(g);
+  const planoSalvo = planosDeAcaoCache[`${tipo}|${chaveDb}`] || "";
+  const exemplosHtml = (g.exemplos || [])
+    .map((ex) =>
+      ex.link_hubspot
+        ? `<a href="${ex.link_hubspot}" target="_blank" rel="noopener">${escapeHtml(ex.empresa || ex.deal_id)} →</a>`
+        : escapeHtml(ex.empresa || ex.deal_id)
+    )
+    .join(" ");
+  return `
       <div class="sintese-card">
         <div class="sintese-header">
-          <div class="sintese-chave">${escapeHtml(g.chave)}</div>
+          <div class="sintese-chave">${escapeHtml(g.chave)} <span class="badge-regiao">${escapeHtml(g.regiao)}</span></div>
           <div class="sintese-qtd">${g.quantidade} deal${g.quantidade === 1 ? "" : "s"}</div>
         </div>
         <p class="sintese-texto">${escapeHtml(g.sintese)}</p>
         ${exemplosHtml ? `<div class="sintese-exemplos">Exemplos: ${exemplosHtml}</div>` : ""}
-        <div class="plano-acao-bloco" data-idx="${i}">
+        <div class="plano-acao-bloco">
           <h4>Plano de ação</h4>
           <textarea placeholder="O que esta sendo feito para resolver isso?">${escapeHtml(planoSalvo)}</textarea>
           <button>Salvar plano</button>
           <div class="plano-acao-status"></div>
         </div>
       </div>`;
-    })
-    .join("");
+}
 
-  el.querySelectorAll(".plano-acao-bloco").forEach((bloco) => {
-    const g = grupos[Number(bloco.dataset.idx)];
+// IMPORTANTE: `g.chave`/`g.equipe`/`g.regiao` de cada grupo sao usados via closure sobre o
+// array `grupos`, nunca interpolados dentro de um atributo HTML -- campanha_origem vem de dado
+// externo (HubSpot) e poderia conter aspas ou outros caracteres que quebrariam um atributo
+// escapado ingenuamente (escapeHtml so escapa para contexto de texto, nao de atributo).
+//
+// agruparPorEquipe=true (Operacao/Qualidade/Estrutural-Processo): separa em blocos SDR/Vendas
+// -- pedido do Pierre em 2026-07-10 apos a lista ficar grande demais misturando tudo.
+function renderSinteseSecao(containerId, grupos, tipo, agruparPorEquipe) {
+  const el = document.getElementById(containerId);
+  if (!grupos || grupos.length === 0) {
+    el.innerHTML = `<div class="empty">Sem dados no periodo.</div>`;
+    return;
+  }
+
+  let html = "";
+  const blocos = agruparPorEquipe
+    ? ["SDR", "Vendas"].map((equipe) => ({ equipe, grupos: grupos.filter((g) => g.equipe === equipe) })).filter((b) => b.grupos.length > 0)
+    : [{ equipe: null, grupos }];
+
+  blocos.forEach((bloco) => {
+    if (bloco.equipe) html += `<h3 class="bloco-equipe-titulo">${bloco.equipe}</h3>`;
+    html += bloco.grupos.map((g) => renderCardSintese(g, tipo)).join("");
+  });
+  el.innerHTML = html;
+
+  el.querySelectorAll(".plano-acao-bloco").forEach((bloco, idx) => {
+    const g = blocos.flatMap((b) => b.grupos)[idx];
     const textarea = bloco.querySelector("textarea");
     const statusEl = bloco.querySelector(".plano-acao-status");
     bloco.querySelector("button").addEventListener("click", () => {
-      salvarPlanoDeAcao(tipo, g.chave, textarea.value, statusEl);
+      salvarPlanoDeAcao(tipo, chaveCompostaPlano(g), textarea.value, statusEl);
     });
   });
 }
@@ -938,13 +972,14 @@ async function carregarRelatorioSemanal() {
       <span><strong>${report_json.total_qualidade}</strong> deal(s) de qualidade</span>
       <span><strong>${report_json.total_estrutural ?? 0}</strong> deal(s) de estrutural</span>
     `;
-    renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao");
-    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade");
+    renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao", true);
+    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade", true);
     // Relatorios gerados antes de 2026-07-10 nao tem o campo "estrutural" -- trata como
     // vazio em vez de quebrar (report_json.estrutural pode ser undefined nesses casos).
     const estrutural = report_json.estrutural || [];
-    renderSinteseSecao("relatorioEstruturalProduto", estrutural.filter((g) => g.destino === "Produto"), "estrutural");
-    renderSinteseSecao("relatorioEstruturalProcesso", estrutural.filter((g) => g.destino !== "Produto"), "estrutural");
+    renderSinteseSecao("relatorioEstruturalProduto", estrutural.filter((g) => g.destino === "Produto"), "estrutural", false);
+    renderSinteseSecao("relatorioEstruturalProcesso", estrutural.filter((g) => g.destino !== "Produto"), "estrutural", true);
+    ultimoRelatorioSemanalCarregado = { periodo_inicio, periodo_fim, report_json };
   } catch (err) {
     resumoEl.innerHTML = `<div class="empty">Erro ao carregar: ${err.message}</div>`;
     console.error(err);
@@ -957,6 +992,52 @@ function selecionarPeriodoRelatorio(periodo) {
   document.getElementById("btnPeriodoSemanal").classList.toggle("ativo", periodo === "semanal");
   document.getElementById("btnPeriodoMensal").classList.toggle("ativo", periodo === "mensal");
   carregarRelatorioSemanal();
+}
+
+// Exportacao XLSX do relatorio semanal/mensal (pedido do Pierre em 2026-07-10): abas por
+// classificacao (Operacao/Qualidade/Estrutural), com blocos SDR/Vendas dentro de cada aba
+// (Estrutural tem um bloco extra "Produto" sem split de equipe, ja que os motivos que caem
+// ali sao especificos de uma equipe cada -- "Quer integração" e so SDR, "Sistema não atende"
+// e so Vendas). Colunas incluem regiao, sintese completa, exemplos e o plano de acao salvo.
+function construirAbaRelatorio(tipo, blocos) {
+  const aoa = [["Equipe", "Região", "Padrão/Campanha", "Quantidade", "Síntese", "Exemplos", "Plano de Ação"]];
+  blocos.forEach(({ titulo, grupos }) => {
+    if (titulo) aoa.push([titulo]);
+    grupos.forEach((g) => {
+      const exemplosTxt = (g.exemplos || [])
+        .map((ex) => `${ex.empresa || ex.deal_id}${ex.link_hubspot ? " — " + ex.link_hubspot : ""}`)
+        .join("\n");
+      const planoTxt = planosDeAcaoCache[`${tipo}|${chaveCompostaPlano(g)}`] || "";
+      aoa.push([g.equipe, g.regiao, g.chave, g.quantidade, g.sintese, exemplosTxt, planoTxt]);
+    });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [10, 10, 30, 12, 70, 40, 40].map((wch) => ({ wch }));
+  return ws;
+}
+
+function exportarRelatorioSemanalXlsx() {
+  if (!ultimoRelatorioSemanalCarregado) {
+    alert("Carregue o relatório antes de exportar.");
+    return;
+  }
+  const { periodo_inicio, periodo_fim, report_json } = ultimoRelatorioSemanalCarregado;
+
+  const porEquipe = (lista) =>
+    ["SDR", "Vendas"].map((equipe) => ({ titulo: equipe, grupos: lista.filter((g) => g.equipe === equipe) })).filter((b) => b.grupos.length > 0);
+
+  const estrutural = report_json.estrutural || [];
+  const naoProduto = estrutural.filter((g) => g.destino !== "Produto");
+  const blocosEstrutural = [
+    { titulo: "Produto", grupos: estrutural.filter((g) => g.destino === "Produto") },
+    ...porEquipe(naoProduto).map((b) => ({ ...b, titulo: `Processo/Dados — ${b.titulo}` })),
+  ].filter((b) => b.grupos.length > 0);
+
+  const livro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("operacao", porEquipe(report_json.operacao || [])), "Operação");
+  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("qualidade", porEquipe(report_json.qualidade || [])), "Qualidade");
+  XLSX.utils.book_append_sheet(livro, construirAbaRelatorio("estrutural", blocosEstrutural), "Estrutural");
+  XLSX.writeFile(livro, `relatorio-${periodoRelatorioAtual}-${periodo_inicio}_a_${periodo_fim}.xlsx`);
 }
 
 function defaultDates() {
@@ -1325,6 +1406,7 @@ function main() {
   });
   document.getElementById("btnPeriodoSemanal").addEventListener("click", () => selecionarPeriodoRelatorio("semanal"));
   document.getElementById("btnPeriodoMensal").addEventListener("click", () => selecionarPeriodoRelatorio("mensal"));
+  document.getElementById("btnExportarRelatorioSemanal").addEventListener("click", exportarRelatorioSemanalXlsx);
 
   renderRegiaoToggle();
   renderEquipeToggle();
