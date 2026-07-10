@@ -154,9 +154,19 @@
     background: none; border: none; color: #6ea8fe; cursor: pointer; font-size: 12px;
     padding: 0; text-decoration: underline;
   }
+  .btn-traducir {
+    position: fixed; top: 18px; right: 18px; z-index: 100;
+    display: none; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: 999px; border: 1px solid var(--qualidade);
+    background: #0f2418; color: var(--qualidade); font-size: 13px; font-weight: 700;
+    cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .btn-traducir:hover { background: rgba(46,204,113,0.18); }
+  .btn-traducir.visivel { display: inline-flex; }
 </style>
 </head>
 <body>
+<button class="btn-traducir" id="btnTraducir">🌐 Traducir al Español</button>
 <div class="wrap">
   <h1>Agente de Descartes — Auvo</h1>
   <div class="subtitle" id="subtitle">Carregando...</div>
@@ -1027,6 +1037,41 @@ function renderRegiaoToggle() {
   document.querySelectorAll("#regiaoToggle button").forEach((btn) => {
     btn.classList.toggle("ativo", btn.dataset.regiao === regiaoAtual);
   });
+  renderBotaoTraducao();
+}
+
+// Pedido do Pierre em 2026-07-10: botao evidente na visao LATAM pra traduzir a pagina
+// INTEIRA (rotulos, tabelas, resumos gerados por IA, tudo) para espanhol -- nao so os
+// textos fixos da interface. Como o dashboard e um site estatico publico (GitHub Pages,
+// sem backend/chave secreta exposta), a solucao e redirecionar para o proxy de traducao
+// do Google (dominio.translate.goog) -- ele busca a pagina, deixa o JS rodar normalmente
+// (Supabase, renderizacao das tabelas) e traduz todo o texto do DOM, incluindo o que e
+// injetado dinamicamente. "tl=es" sem variante regional (es-MX, es-AR etc.) da o espanhol
+// mais neutro/universal do tradutor, adequado para um time com gente de varios paises.
+const HOST_PRODUCAO = "pierreauvo.github.io";
+
+function estamosNoProxyDeTraducao() {
+  return window.location.hostname.endsWith(".translate.goog");
+}
+
+function irParaTraducaoEspanhol() {
+  const hostCodificado = window.location.hostname.replace(/\./g, "-");
+  const url = `https://${hostCodificado}.translate.goog${window.location.pathname}?_x_tr_sl=pt&_x_tr_tl=es&_x_tr_hl=es&_x_tr_pto=wapp`;
+  window.location.href = url;
+}
+
+function voltarParaPortugues() {
+  window.location.href = `https://${HOST_PRODUCAO}${window.location.pathname}`;
+}
+
+function renderBotaoTraducao() {
+  const btn = document.getElementById("btnTraducir");
+  const noProxy = estamosNoProxyDeTraducao();
+  // Visivel na visao LATAM (pedido do Pierre) -- e tambem se ja estivermos na versao
+  // traduzida (pra sempre ter como voltar ao portugues, mesmo se o usuario trocar de
+  // regiao depois de ja ter clicado).
+  btn.classList.toggle("visivel", regiaoAtual === "LATAM" || noProxy);
+  btn.textContent = noProxy ? "🇧🇷 Ver en portugués" : "🌐 Traducir al Español";
 }
 
 function selecionarRegiao(regiao) {
@@ -1069,6 +1114,10 @@ function main() {
   });
   document.querySelectorAll("#regiaoToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarRegiao(btn.dataset.regiao));
+  });
+  document.getElementById("btnTraducir").addEventListener("click", () => {
+    if (estamosNoProxyDeTraducao()) voltarParaPortugues();
+    else irParaTraducaoEspanhol();
   });
   document.querySelectorAll("#mainTabs button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarTab(btn.dataset.tab));
