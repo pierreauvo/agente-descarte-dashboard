@@ -336,6 +336,14 @@
       <h2>Qualidade por campanha — para o time de Marketing agir</h2>
       <div id="relatorioQualidade"></div>
     </section>
+    <section>
+      <h2>Estrutural — para o time de Produto agir (gaps reais de sistema)</h2>
+      <div id="relatorioEstruturalProduto"></div>
+    </section>
+    <section>
+      <h2>Estrutural — roteamento/dados (não é produto, revisão de processo/CRM)</h2>
+      <div id="relatorioEstruturalProcesso"></div>
+    </section>
   </div>
 </div>
 
@@ -907,6 +915,8 @@ async function carregarRelatorioSemanal() {
   const resumoEl = document.getElementById("relatorioSemanalResumo");
   const opEl = document.getElementById("relatorioOperacao");
   const qualEl = document.getElementById("relatorioQualidade");
+  const estProdutoEl = document.getElementById("relatorioEstruturalProduto");
+  const estProcessoEl = document.getElementById("relatorioEstruturalProcesso");
   resumoEl.innerHTML = "Carregando...";
   try {
     await carregarPlanosDeAcao();
@@ -917,6 +927,8 @@ async function carregarRelatorioSemanal() {
       resumoEl.innerHTML = "";
       opEl.innerHTML = `<div class="empty">Nenhum relatorio ${periodoRelatorioAtual} gerado ainda.</div>`;
       qualEl.innerHTML = "";
+      estProdutoEl.innerHTML = "";
+      estProcessoEl.innerHTML = "";
       return;
     }
     const { periodo_inicio, periodo_fim, report_json } = rows[0];
@@ -924,9 +936,15 @@ async function carregarRelatorioSemanal() {
       <span>Período: <strong>${periodo_inicio}</strong> a <strong>${periodo_fim}</strong></span>
       <span><strong>${report_json.total_operacao}</strong> deal(s) de operação</span>
       <span><strong>${report_json.total_qualidade}</strong> deal(s) de qualidade</span>
+      <span><strong>${report_json.total_estrutural ?? 0}</strong> deal(s) de estrutural</span>
     `;
     renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao");
     renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade");
+    // Relatorios gerados antes de 2026-07-10 nao tem o campo "estrutural" -- trata como
+    // vazio em vez de quebrar (report_json.estrutural pode ser undefined nesses casos).
+    const estrutural = report_json.estrutural || [];
+    renderSinteseSecao("relatorioEstruturalProduto", estrutural.filter((g) => g.destino === "Produto"), "estrutural");
+    renderSinteseSecao("relatorioEstruturalProcesso", estrutural.filter((g) => g.destino !== "Produto"), "estrutural");
   } catch (err) {
     resumoEl.innerHTML = `<div class="empty">Erro ao carregar: ${err.message}</div>`;
     console.error(err);
