@@ -266,6 +266,10 @@
         <select id="filtroMotivo"><option value="">Todos</option></select>
       </div>
       <div class="filtro-campo">
+        <label>Campanha</label>
+        <select id="filtroCampanha"><option value="">Todas</option></select>
+      </div>
+      <div class="filtro-campo">
         <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
       </div>
     </div>
@@ -1275,6 +1279,18 @@ function popularFiltroResponsavel(rows) {
   if (nomes.includes(selecionado)) select.value = selecionado;
 }
 
+// Mesmo padrao do filtro de motivo/responsavel: populado a partir das campanhas presentes no
+// periodo/etapa/categoria atual (pedido do Pierre em 2026-07-10, filtro por campanha).
+function popularFiltroCampanha(rows) {
+  const select = document.getElementById("filtroCampanha");
+  const selecionado = select.value;
+  const campanhas = [...new Set(rows.map((r) => r.campanha_origem).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todas</option>` +
+    campanhas.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  if (campanhas.includes(selecionado)) select.value = selecionado;
+}
+
 async function carregarDados() {
   const subtitle = document.getElementById("subtitle");
   const de = document.getElementById("dataDe").value;
@@ -1309,11 +1325,14 @@ async function carregarDados() {
 
     popularFiltroMotivo(rowsBase);
     popularFiltroResponsavel(rowsBase);
+    popularFiltroCampanha(rowsBase);
     const motivoEscolhido = document.getElementById("filtroMotivo").value;
     const responsavelEscolhido = document.getElementById("filtroResponsavel").value;
+    const campanhaEscolhida = document.getElementById("filtroCampanha").value;
     const rows = rowsBase
       .filter((r) => !motivoEscolhido || r.motivo_registrado_micro === motivoEscolhido)
-      .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido);
+      .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido)
+      .filter((r) => !campanhaEscolhida || r.campanha_origem === campanhaEscolhida);
 
     // Aba "Motivos Incorretos": deriva do mesmo rowsBase (respeita data/equipe/etapa/
     // categoria), mas ignora os filtros de motivo/responsavel do Descartes -- e uma visao de
@@ -1581,6 +1600,7 @@ function main() {
   document.getElementById("filtroEtapa").addEventListener("change", carregarDados);
   document.getElementById("filtroMotivo").addEventListener("change", carregarDados);
   document.getElementById("filtroResponsavel").addEventListener("change", carregarDados);
+  document.getElementById("filtroCampanha").addEventListener("change", carregarDados);
   document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
