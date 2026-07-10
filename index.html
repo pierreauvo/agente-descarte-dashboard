@@ -163,6 +163,11 @@
   <div class="atualizacao" id="atualizacao">Verificando última atualização...</div>
   <div class="atualizacao" id="integridade">Verificando integridade dos dados...</div>
 
+  <div class="equipe-toggle" id="regiaoToggle" style="margin-bottom:8px;">
+    <button data-regiao="Brasil">Brasil</button>
+    <button data-regiao="LATAM">LATAM</button>
+  </div>
+
   <div class="equipe-toggle" id="equipeToggle">
     <button data-equipe="SDR">SDR<span class="etapas">Entrada, Conexão, Diagnóstico</span></button>
     <button data-equipe="Vendas">Vendas<span class="etapas">Apresentação da Solução, Negociação</span></button>
@@ -301,6 +306,12 @@ const EQUIPES = {
 
 let equipeAtual = localStorage.getItem("discardAgentEquipe") || "SDR";
 if (!EQUIPES[equipeAtual]) equipeAtual = "SDR";
+
+// Regiao (Brasil/LATAM), pedido do Pierre em 2026-07-09/10 -- mesmos criterios do Brasil,
+// pipeline diferente (ver PIPELINE_REGIAO em src/lib/hubspot.ts). Ortogonal ao toggle de
+// equipe (SDR/Vendas existem nas duas regioes).
+let regiaoAtual = localStorage.getItem("discardAgentRegiao") || "Brasil";
+if (!["Brasil", "LATAM"].includes(regiaoAtual)) regiaoAtual = "Brasil";
 
 let tabAtiva = localStorage.getItem("discardAgentTab") || "descartes";
 if (!["descartes", "alertas", "motivosIncorretos", "comparacaoMensal"].includes(tabAtiva)) tabAtiva = "descartes";
@@ -807,12 +818,15 @@ async function carregarDados() {
     // SDR = descartes, Vendas = perdas (Apresentacao da Solucao/Negociacao usam motivo de
     // perda, nao motivo de descarte) -- pedido do Pierre em 2026-07-09.
     const filtroTipo = [`tipo=eq.${equipeAtual === "Vendas" ? "perda" : "descarte"}`];
+    // Brasil/LATAM (pedido do Pierre em 2026-07-09/10) -- mesmos criterios, pipeline
+    // diferente. Ver PIPELINE_REGIAO em src/lib/hubspot.ts.
+    const filtroRegiao = [`regiao=eq.${regiaoAtual}`];
 
     // Motivo e responsavel (SDR/Vendedor) NAO entram na query -- filtrados client-side
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo].join("&")}&order=${campoData}.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
@@ -845,7 +859,7 @@ async function carregarDados() {
     renderMotivosIncorretos(rowsMotivosIncorretos);
     renderComparacaoMensal(rowsBase);
 
-    subtitle.textContent = `Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
+    subtitle.textContent = `${regiaoAtual} — Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
   } catch (err) {
     subtitle.textContent = `Erro ao carregar dados: ${err.message}`;
     console.error(err);
@@ -963,7 +977,7 @@ function exportarXlsx() {
   XLSX.utils.book_append_sheet(livro, planilha, `${rotuloResultado()}s`);
   const de = document.getElementById("dataDe").value;
   const ate = document.getElementById("dataAte").value;
-  XLSX.writeFile(livro, `${rotuloResultado().toLowerCase()}s-${equipeAtual}-${de}_a_${ate}.xlsx`);
+  XLSX.writeFile(livro, `${rotuloResultado().toLowerCase()}s-${regiaoAtual}-${equipeAtual}-${de}_a_${ate}.xlsx`);
 }
 
 // Pedido do Pierre em 2026-07-08/09: na equipe Vendas o nome exibido e do vendedor (closer),
@@ -1009,6 +1023,19 @@ function selecionarEquipe(equipe) {
   carregarDados();
 }
 
+function renderRegiaoToggle() {
+  document.querySelectorAll("#regiaoToggle button").forEach((btn) => {
+    btn.classList.toggle("ativo", btn.dataset.regiao === regiaoAtual);
+  });
+}
+
+function selecionarRegiao(regiao) {
+  regiaoAtual = regiao;
+  localStorage.setItem("discardAgentRegiao", regiao);
+  renderRegiaoToggle();
+  carregarDados();
+}
+
 function renderTabAtiva() {
   document.querySelectorAll("#mainTabs button").forEach((btn) => {
     btn.classList.toggle("ativo", btn.dataset.tab === tabAtiva);
@@ -1040,10 +1067,14 @@ function main() {
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
   });
+  document.querySelectorAll("#regiaoToggle button").forEach((btn) => {
+    btn.addEventListener("click", () => selecionarRegiao(btn.dataset.regiao));
+  });
   document.querySelectorAll("#mainTabs button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarTab(btn.dataset.tab));
   });
 
+  renderRegiaoToggle();
   renderEquipeToggle();
   renderTabAtiva();
   popularFiltroEtapa();
