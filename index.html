@@ -189,6 +189,11 @@
   .sintese-card .sintese-texto { font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
   .sintese-card .sintese-exemplos { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
   .sintese-card .sintese-exemplos a { margin-right: 10px; }
+  .sintese-card .sintese-metricas {
+    display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: var(--muted);
+    margin: 0 0 12px; padding: 8px 10px; background: #10121a; border: 1px solid var(--border); border-radius: 6px;
+  }
+  .sintese-card .sintese-metricas strong { color: var(--text); }
   .plano-acao-bloco h4 {
     margin: 0 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em;
   }
@@ -891,6 +896,12 @@ function chaveCompostaPlano(g) {
   return `${g.equipe} | ${g.regiao} | ${g.chave}`;
 }
 
+// Formata um numero (0-100) como percentual com 1 casa decimal, ou travessao quando nao da
+// pra calcular (sem MQL de midia no denominador).
+function formatarPct(valor) {
+  return valor === null || valor === undefined ? "—" : `${valor.toFixed(1)}%`;
+}
+
 function renderCardSintese(g, tipo) {
   const chaveDb = chaveCompostaPlano(g);
   const planoSalvo = planosDeAcaoCache[`${tipo}|${chaveDb}`] || "";
@@ -901,12 +912,24 @@ function renderCardSintese(g, tipo) {
         : escapeHtml(ex.empresa || ex.deal_id)
     )
     .join(" ");
+  // So a secao Qualidade carrega essas 3 metricas (pedido do Pierre em 2026-07-12): quanto do
+  // volume total de MQL de midia essa campanha representa, qual fatia do MQL da PROPRIA
+  // campanha virou descarte, e o total bruto de descartes (todas as classificacoes) dela.
+  const metricasHtml =
+    g.qtde_total_descarte !== undefined
+      ? `<div class="sintese-metricas">
+           <span>Impacto de mídia: <strong>${formatarPct(g.pct_impacto_midia)}</strong></span>
+           <span>Impacto de descarte: <strong>${formatarPct(g.pct_impacto_descarte)}</strong></span>
+           <span>Total de descartes da campanha: <strong>${g.qtde_total_descarte}</strong></span>
+         </div>`
+      : "";
   return `
       <div class="sintese-card">
         <div class="sintese-header">
           <div class="sintese-chave">${escapeHtml(g.chave)} <span class="badge-regiao">${escapeHtml(g.regiao)}</span></div>
           <div class="sintese-qtd">${g.quantidade} deal${g.quantidade === 1 ? "" : "s"}</div>
         </div>
+        ${metricasHtml}
         <p class="sintese-texto">${escapeHtml(g.sintese)}</p>
         ${exemplosHtml ? `<div class="sintese-exemplos">Exemplos: ${exemplosHtml}</div>` : ""}
         <div class="plano-acao-bloco">
@@ -1126,6 +1149,9 @@ function linhaDeGrupo(tipo, colunasChaves, g) {
     exemplos: formatarExemplos(g.exemplos),
     plano: planoTxt,
     destino: g.destino || "",
+    pct_impacto_midia: formatarPct(g.pct_impacto_midia),
+    pct_impacto_descarte: formatarPct(g.pct_impacto_descarte),
+    qtde_total_descarte: g.qtde_total_descarte ?? "",
   };
   return colunasChaves.map((chave) => valoresPossiveis[chave]);
 }
@@ -1185,11 +1211,27 @@ function exportarRelatorioSemanalXlsx() {
     { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
     { titulo: "Campanha", largura: 32, estilo: ESTILO_TEXTO },
     { titulo: "Quantidade", largura: 12, estilo: ESTILO_CENTRO },
+    // 3 colunas de impacto (pedido do Pierre em 2026-07-12): % que a campanha representa do
+    // total de MQL gerado por midia na regiao, % do proprio MQL da campanha que virou
+    // descarte, e o total bruto de descartes (todas as classificacoes) dela.
+    { titulo: "% Impacto de Mídia", largura: 16, estilo: ESTILO_CENTRO },
+    { titulo: "% Impacto de Descarte", largura: 16, estilo: ESTILO_CENTRO },
+    { titulo: "Qtde Total de Descarte", largura: 16, estilo: ESTILO_CENTRO },
     { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
     { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
     { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
   ];
-  const chavesQualidade = ["equipe", "padrao", "quantidade", "sintese", "exemplos", "plano"];
+  const chavesQualidade = [
+    "equipe",
+    "padrao",
+    "quantidade",
+    "pct_impacto_midia",
+    "pct_impacto_descarte",
+    "qtde_total_descarte",
+    "sintese",
+    "exemplos",
+    "plano",
+  ];
   const ordenarPorQuantidade = (grupos) => grupos.slice().sort((a, b) => b.quantidade - a.quantidade);
 
   const colunasEstrutural = [
