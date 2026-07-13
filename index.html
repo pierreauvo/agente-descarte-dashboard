@@ -244,6 +244,7 @@
     <button data-tab="motivosIncorretos">Motivos Incorretos<span class="badge" id="badgeMotivosIncorretos" style="display:none"></span></button>
     <button data-tab="comparacaoMensal">Comparação Mensal</button>
     <button data-tab="relatorioSemanal">Relatório Semanal</button>
+    <button data-tab="saudeDescartes">Saúde dos Descartes</button>
   </div>
 
   <div class="tab-pane" id="tabDescartes">
@@ -337,6 +338,32 @@
     <section>
       <h2 id="headerMotivosQueda">Motivos em queda</h2>
       <div class="card" id="motivosQueda"></div>
+    </section>
+  </div>
+
+  <div class="tab-pane" id="tabSaudeDescartes">
+    <div class="alertas-resumo" id="saudeDescartesResumo"></div>
+    <section>
+      <h2>Saúde dos descartes por SDR</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>SDR</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr>
+          </thead>
+          <tbody id="tabelaSaudeSdr"></tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>Saúde dos descartes por campanha</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Campanha</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr>
+          </thead>
+          <tbody id="tabelaSaudeCampanha"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 
@@ -843,6 +870,90 @@ function renderMotivosTendencia(motivoPorMes) {
     `Motivos em queda (${mesLabel(mesAnterior + "-01")} → ${mesLabel(mesAtual + "-01")})`;
   elAlta.innerHTML = renderLista(subindo, "var(--operacao)");
   elQueda.innerHTML = renderLista(caindo, "var(--qualidade)");
+}
+
+// Score de saude do descarte (pedido do Walter/Pierre em 2026-07-12): combina os DOIS eixos
+// que ja existem no dado, mas antes ficavam misturados num veredito so -- a classificacao do
+// motivo (o lead era realmente ruim?) e os scores_sdr calculados pela IA quando ha conteudo
+// real (o SDR executou bem?). Ideia: nao deixar a "primeira impressao" do lead virar veredito
+// final quando o SDR mal tentou.
+// - classificacao != OPERACAO (confirmado por regra ou por IA apos revisar conteudo real) ->
+//   descarte objetivamente legitimo, score 100 independente da execucao (nao ha o que o SDR
+//   pudesse ter feito diferente).
+// - classificacao == OPERACAO com scores calculados (havia conteudo real) -> media dos 5
+//   sub-scores (0-10) escalada para 0-100, refletindo o quao ruim foi a execucao.
+// - classificacao == OPERACAO sem nenhum score (motivo ambiguo mas SEM conteudo real pra
+//   avaliar, ex: "tentativas esgotadas" sem nenhuma call/nota real) -> null ("sem dados
+//   suficientes"), pois genuinamente nao da pra saber se o lead era bom ou nao.
+function saudeDescarte(r) {
+  if (r.classificacao === "AUVOHUB") return null; // fora do fluxo normal, fora de escopo
+  if (r.classificacao !== "OPERACAO") return 100;
+  const scores = [r.score_discovery, r.score_geracao_dor, r.score_tratamento_objecao, r.score_execucao_processo, r.score_conducao].filter(
+    (s) => s !== null && s !== undefined
+  );
+  if (scores.length === 0) return null;
+  return (scores.reduce((a, b) => a + b, 0) / scores.length) * 10;
+}
+
+// Agrupa por SDR ou por campanha (chaveFn) e calcula a media do score de saude entre os
+// descartes AVALIAVEIS (com dado suficiente) de cada grupo -- grupos com menos de 3
+// descartes no periodo ficam de fora do ranking, pouco representativos.
+function agruparSaude(rowsComScore, chaveFn) {
+  const grupos = {};
+  rowsComScore.forEach((r) => {
+    const chave = chaveFn(r);
+    if (!chave) return;
+    (grupos[chave] ||= []).push(r);
+  });
+  return Object.entries(grupos)
+    .map(([chave, itens]) => {
+      const avaliados = itens.filter((r) => r._saude !== null);
+      const media = avaliados.length > 0 ? avaliados.reduce((soma, r) => soma + r._saude, 0) / avaliados.length : null;
+      return { chave, total: itens.length, avaliados: avaliados.length, semDados: itens.length - avaliados.length, media };
+    })
+    .filter((g) => g.total >= 3)
+    .sort((a, b) => (a.media ?? 999) - (b.media ?? 999)); // pior primeiro -- prioriza quem precisa de atencao
+}
+
+function corSaude(media) {
+  if (media === null) return "var(--muted)";
+  if (media >= 80) return "#4ade80";
+  if (media >= 50) return "#fbbf24";
+  return "#f87171";
+}
+
+function renderLinhasSaude(tbodyId, grupos, labelVazio) {
+  const tbody = document.getElementById(tbodyId);
+  if (grupos.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">Sem ${labelVazio} com pelo menos 3 descartes no período.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = grupos
+    .map(
+      (g) => `
+    <tr>
+      <td>${escapeHtml(g.chave)}</td>
+      <td>${g.total}</td>
+      <td>${g.avaliados}</td>
+      <td>${g.semDados}</td>
+      <td style="font-weight:700; color:${corSaude(g.media)}">${g.media === null ? "Sem dados" : g.media.toFixed(0)}</td>
+    </tr>`
+    )
+    .join("");
+}
+
+function renderSaudeDescartes(rows) {
+  const resumoEl = document.getElementById("saudeDescartesResumo");
+  const rowsComScore = rows.map((r) => ({ ...r, _saude: saudeDescarte(r) }));
+
+  const avaliaveisTotal = rowsComScore.filter((r) => r._saude !== null).length;
+  resumoEl.innerHTML = `
+    <span><strong>${rows.length}</strong> descarte(s) no período</span>
+    <span><strong>${avaliaveisTotal}</strong> com dado suficiente para avaliar saúde (${rows.length > 0 ? ((avaliaveisTotal / rows.length) * 100).toFixed(0) : 0}%)</span>
+  `;
+
+  renderLinhasSaude("tabelaSaudeSdr", agruparSaude(rowsComScore, (r) => r.sdr), "SDR");
+  renderLinhasSaude("tabelaSaudeCampanha", agruparSaude(rowsComScore, (r) => r.campanha_origem), "campanhas");
 }
 
 function renderComparacaoMensal(rows) {
@@ -1362,7 +1473,7 @@ async function carregarDados() {
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
@@ -1397,6 +1508,7 @@ async function carregarDados() {
     renderTabela(rows);
     renderMotivosIncorretos(rowsMotivosIncorretos);
     renderComparacaoMensal(rowsBase);
+    renderSaudeDescartes(rows);
 
     subtitle.textContent = `${regiaoAtual} — Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
   } catch (err) {
@@ -1619,6 +1731,7 @@ function renderTabAtiva() {
   document.getElementById("tabMotivosIncorretos").classList.toggle("ativo", tabAtiva === "motivosIncorretos");
   document.getElementById("tabComparacaoMensal").classList.toggle("ativo", tabAtiva === "comparacaoMensal");
   document.getElementById("tabRelatorioSemanal").classList.toggle("ativo", tabAtiva === "relatorioSemanal");
+  document.getElementById("tabSaudeDescartes").classList.toggle("ativo", tabAtiva === "saudeDescartes");
 }
 
 function selecionarTab(tab) {
