@@ -344,26 +344,12 @@
   <div class="tab-pane" id="tabSaudeDescartes">
     <div class="alertas-resumo" id="saudeDescartesResumo"></div>
     <section>
-      <h2>Saúde dos descartes por SDR</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>SDR</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr>
-          </thead>
-          <tbody id="tabelaSaudeSdr"></tbody>
-        </table>
-      </div>
+      <h2>Saúde dos descartes por SDR/Vendedor</h2>
+      <div id="saudeDescartesSdrContainer"></div>
     </section>
     <section>
       <h2>Saúde dos descartes por campanha</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Campanha</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr>
-          </thead>
-          <tbody id="tabelaSaudeCampanha"></tbody>
-        </table>
-      </div>
+      <div id="saudeDescartesCampanhaContainer"></div>
     </section>
   </div>
 
@@ -922,13 +908,15 @@ function corSaude(media) {
   return "#f87171";
 }
 
-function renderLinhasSaude(tbodyId, grupos, labelVazio) {
-  const tbody = document.getElementById(tbodyId);
+function equipeDoRowSaude(r) {
+  return r.tipo === "perda" ? "Vendas" : "SDR";
+}
+
+function tabelaSaudeHtml(grupos, colunaLabel, labelVazio) {
   if (grupos.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty">Sem ${labelVazio} com pelo menos 3 descartes no período.</td></tr>`;
-    return;
+    return `<div class="empty">Sem ${labelVazio} com pelo menos 3 descartes no período.</div>`;
   }
-  tbody.innerHTML = grupos
+  const linhas = grupos
     .map(
       (g) => `
     <tr>
@@ -940,20 +928,64 @@ function renderLinhasSaude(tbodyId, grupos, labelVazio) {
     </tr>`
     )
     .join("");
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>${colunaLabel}</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>`;
 }
 
-function renderSaudeDescartes(rows) {
+// Blocos por Regiao (Brasil/LATAM) e, dentro de cada regiao, por Equipe (SDR/Vendas) --
+// pedido do Pierre em 2026-07-12: a visao consolidada nao deve depender do toggle
+// Equipe/Regiao da tela (que so afeta a aba Descartes), e sim mostrar as 4 combinacoes juntas.
+function renderBlocosSaude(containerId, rowsComScore, colunaLabel, chaveFn, labelVazio) {
+  const el = document.getElementById(containerId);
+  let html = "";
+  ["Brasil", "LATAM"].forEach((regiao) => {
+    const rowsRegiao = rowsComScore.filter((r) => r.regiao === regiao);
+    if (rowsRegiao.length === 0) return;
+    html += `<h3 class="bloco-equipe-titulo">${regiao}</h3>`;
+    ["SDR", "Vendas"].forEach((equipe) => {
+      const rowsEquipe = rowsRegiao.filter((r) => equipeDoRowSaude(r) === equipe);
+      if (rowsEquipe.length === 0) return;
+      html += `<h4 style="font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:0.03em; margin:14px 0 8px;">${equipe}</h4>`;
+      html += tabelaSaudeHtml(agruparSaude(rowsEquipe, chaveFn), colunaLabel, labelVazio);
+    });
+  });
+  el.innerHTML = html || `<div class="empty">Sem dados no período.</div>`;
+}
+
+function renderSaudeDescartes(rowsConsolidadas) {
   const resumoEl = document.getElementById("saudeDescartesResumo");
-  const rowsComScore = rows.map((r) => ({ ...r, _saude: saudeDescarte(r) }));
+  const rowsComScore = rowsConsolidadas.map((r) => ({ ...r, _saude: saudeDescarte(r) }));
 
   const avaliaveisTotal = rowsComScore.filter((r) => r._saude !== null).length;
   resumoEl.innerHTML = `
-    <span><strong>${rows.length}</strong> descarte(s) no período</span>
-    <span><strong>${avaliaveisTotal}</strong> com dado suficiente para avaliar saúde (${rows.length > 0 ? ((avaliaveisTotal / rows.length) * 100).toFixed(0) : 0}%)</span>
+    <span><strong>${rowsConsolidadas.length}</strong> descarte(s)/perda(s) no período (Brasil + LATAM, SDR + Vendas)</span>
+    <span><strong>${avaliaveisTotal}</strong> com dado suficiente para avaliar saúde (${rowsConsolidadas.length > 0 ? ((avaliaveisTotal / rowsConsolidadas.length) * 100).toFixed(0) : 0}%)</span>
   `;
 
-  renderLinhasSaude("tabelaSaudeSdr", agruparSaude(rowsComScore, (r) => r.sdr), "SDR");
-  renderLinhasSaude("tabelaSaudeCampanha", agruparSaude(rowsComScore, (r) => r.campanha_origem), "campanhas");
+  renderBlocosSaude("saudeDescartesSdrContainer", rowsComScore, "SDR/Vendedor", (r) => r.sdr, "SDR/Vendedor");
+  renderBlocosSaude("saudeDescartesCampanhaContainer", rowsComScore, "Campanha", (r) => r.campanha_origem, "campanhas");
+}
+
+// Independente do toggle Equipe/Regiao e dos demais filtros da aba Descartes -- so respeita
+// o periodo (De/Ate) selecionado, ja que e uma visao consolidada de saude, nao uma lista
+// filtravel deal a deal.
+async function carregarSaudeDescartes() {
+  const de = document.getElementById("dataDe").value;
+  const ate = document.getElementById("dataAte").value;
+  try {
+    const rows = await supabaseGet(
+      `discard_analyses?select=tipo,regiao,sdr,campanha_origem,classificacao,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&data_descarte=gte.${de}&data_descarte=lte.${ate}&elegivel_relatorio_hubspot=eq.true&limit=5000`
+    );
+    renderSaudeDescartes(rows);
+  } catch (err) {
+    document.getElementById("saudeDescartesResumo").innerHTML = `<span>Erro ao carregar: ${err.message}</span>`;
+    console.error(err);
+  }
 }
 
 function renderComparacaoMensal(rows) {
@@ -1508,7 +1540,7 @@ async function carregarDados() {
     renderTabela(rows);
     renderMotivosIncorretos(rowsMotivosIncorretos);
     renderComparacaoMensal(rowsBase);
-    renderSaudeDescartes(rows);
+    await carregarSaudeDescartes();
 
     subtitle.textContent = `${regiaoAtual} — Equipe ${equipeAtual} — ${rows.length} ${rotuloResultado().toLowerCase()}(s) entre ${de} e ${ate}`;
   } catch (err) {
