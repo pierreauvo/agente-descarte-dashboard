@@ -69,6 +69,21 @@
     display: flex; gap: 16px; margin-bottom: 16px; font-size: 13px; color: var(--muted);
   }
   .alertas-resumo strong { color: var(--text); }
+  .legenda-saude {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 20px; font-size: 12.5px; color: var(--muted); line-height: 1.6;
+  }
+  .legenda-saude h4 {
+    margin: 0 0 8px; font-size: 12px; color: var(--text); text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .legenda-saude p { margin: 8px 0; }
+  .legenda-saude ul { margin: 8px 0; padding-left: 18px; }
+  .legenda-saude li { margin-bottom: 8px; }
+  .legenda-saude strong { color: var(--text); }
+  .legenda-badge {
+    display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700;
+    color: #111827; margin-right: 6px; vertical-align: middle;
+  }
   .filtros {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
@@ -343,6 +358,40 @@
 
   <div class="tab-pane" id="tabSaudeDescartes">
     <div class="alertas-resumo" id="saudeDescartesResumo"></div>
+    <div class="legenda-saude">
+      <h4>Como o score de saúde é calculado</h4>
+      <p>
+        Cada descarte/perda combina <strong>duas perguntas separadas</strong> — "o lead era bom?" e
+        "o SDR/vendedor executou bem?" — sem deixar uma responder pela outra:
+      </p>
+      <ul>
+        <li>
+          <span class="legenda-badge" style="background:#4ade80">100</span>
+          <strong>Motivo do descarte confirmado como válido</strong> (por regra objetiva ou por auditoria
+          da IA sobre o conteúdo real da conversa) — descarte correto, o score é máximo
+          <em>independente</em> de como foi a execução, porque não havia nada a fazer diferente.
+        </li>
+        <li>
+          <span class="legenda-badge" style="background:#fbbf24">50-79</span><span class="legenda-badge" style="background:#f87171">&lt;50</span>
+          <strong>Motivo indica falha de execução (OPERACAO)</strong> e havia conteúdo real (call/nota/
+          mensagem) para a IA avaliar — o score é a média de 5 notas de 0 a 10 (discovery, geração de
+          dor, tratamento de objeção, execução de processo, condução), escalada para 0-100. Quanto mais
+          baixo, pior a execução — e maior o risco de ter descartado um lead que poderia ter sido
+          convertido.
+        </li>
+        <li>
+          <span class="legenda-badge" style="background:var(--muted)">Sem dados</span>
+          <strong>Não há informação suficiente para avaliar</strong> — motivo ambíguo (ex: "tentativas
+          esgotadas") mas sem nenhuma call/nota/mensagem real registrada. Não conta a favor nem contra;
+          é um sinal à parte de que falta documentação da interação.
+        </li>
+      </ul>
+      <p>
+        As colunas <strong>Avaliados</strong> e <strong>Sem dados suficientes</strong> mostram quantos
+        descartes do grupo caem em cada situação. Grupos (SDR/vendedor ou campanha) com menos de 3
+        descartes no período ficam de fora do ranking — amostra pequena demais para ser representativa.
+      </p>
+    </div>
     <section>
       <h2>Saúde dos descartes por SDR/Vendedor</h2>
       <div id="saudeDescartesSdrContainer"></div>
