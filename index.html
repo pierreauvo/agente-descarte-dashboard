@@ -413,6 +413,10 @@
       <button id="btnExportarRelatorioSemanal" style="margin-left:auto;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;" title="Exporta o relatorio completo em 6 abas: Operacao/Qualidade/Estrutural x Brasil/LATAM">⬇ Exportar relatório (XLSX)</button>
     </div>
     <div class="alertas-resumo" id="relatorioSemanalResumo"></div>
+    <section id="secaoRelatorioPaises">
+      <h2>Distribuição por país (LATAM)</h2>
+      <div id="relatorioPaises"></div>
+    </section>
     <section>
       <h2>Operação — para o time de Vendas agir</h2>
       <div id="relatorioOperacao"></div>
@@ -1180,6 +1184,38 @@ function renderSinteseSecao(containerId, grupos, tipo, modoAgrupamento) {
   });
 }
 
+// Distribuicao de volume por pais no LATAM (pedido do Pierre em 2026-07-15) -- separado em
+// blocos SDR/Vendas, mesmo padrao visual das barras de categoria (renderCategoriaBars).
+function renderPaisesLatam(paisesLatam) {
+  const secaoEl = document.getElementById("secaoRelatorioPaises");
+  const el = document.getElementById("relatorioPaises");
+  const paises = paisesLatam || [];
+  if (paises.length === 0) {
+    secaoEl.style.display = "none";
+    return;
+  }
+  secaoEl.style.display = "";
+
+  let html = "";
+  ["SDR", "Vendas"].forEach((equipe) => {
+    const doEquipe = paises.filter((p) => p.equipe === equipe).sort((a, b) => b.quantidade - a.quantidade);
+    if (doEquipe.length === 0) return;
+    const total = doEquipe.reduce((soma, p) => soma + p.quantidade, 0);
+    html += `<h3 class="bloco-equipe-titulo">${equipe}</h3>`;
+    html += doEquipe
+      .map(
+        (p) => `
+      <div class="bar-row">
+        <div class="bar-label">${escapeHtml(p.pais)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct(p.quantidade, total)}%;background:#6ea8fe"></div></div>
+        <div class="bar-pct">${p.quantidade} (${pct(p.quantidade, total)}%)</div>
+      </div>`
+      )
+      .join("");
+  });
+  el.innerHTML = html;
+}
+
 async function carregarRelatorioSemanal() {
   const resumoEl = document.getElementById("relatorioSemanalResumo");
   const opEl = document.getElementById("relatorioOperacao");
@@ -1198,6 +1234,7 @@ async function carregarRelatorioSemanal() {
       qualEl.innerHTML = "";
       estProdutoEl.innerHTML = "";
       estProcessoEl.innerHTML = "";
+      document.getElementById("secaoRelatorioPaises").style.display = "none";
       return;
     }
     const { periodo_inicio, periodo_fim, report_json } = rows[0];
@@ -1209,6 +1246,7 @@ async function carregarRelatorioSemanal() {
       <span><strong>${report_json.total_qualidade}</strong> deal(s) de qualidade</span>
       <span><strong>${report_json.total_estrutural ?? 0}</strong> deal(s) de estrutural</span>
     `;
+    renderPaisesLatam(report_json.paises_latam);
     renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao", "equipe");
     // Qualidade e Estrutural agrupam por REGIAO no dashboard agora, igual a exportacao XLSX
     // (antes agrupavam por equipe) -- pedido do Pierre pra manter as duas visoes consistentes.
@@ -1391,6 +1429,24 @@ function construirAbaPorRegiaoSemBloco(tipo, regiao, colunas, chaves, grupos, or
   return montarPlanilha(colunas, itens, tituloTopo);
 }
 
+// Distribuicao por pais no LATAM (pedido do Pierre em 2026-07-15) -- blocos SDR/Vendas,
+// mesmo padrao de construirAbaOperacaoPorRegiao.
+function construirAbaPaisesLatam(paisesLatam, tituloTopo) {
+  const colunas = [
+    { titulo: "País", largura: 24, estilo: ESTILO_TEXTO },
+    { titulo: "Quantidade", largura: 14, estilo: ESTILO_CENTRO },
+  ];
+  const itens = [];
+  ["SDR", "Vendas"].forEach((equipe) => {
+    const doEquipe = (paisesLatam || []).filter((p) => p.equipe === equipe).sort((a, b) => b.quantidade - a.quantidade);
+    if (doEquipe.length === 0) return;
+    itens.push({ bloco: equipe, estilo: ESTILO_BLOCO_EQUIPE });
+    doEquipe.forEach((p) => itens.push({ valores: [p.pais, p.quantidade] }));
+  });
+  if (itens.length === 0) itens.push({ valores: ["Sem dados no período", ""] });
+  return montarPlanilha(colunas, itens, tituloTopo);
+}
+
 function exportarRelatorioSemanalXlsx() {
   if (!ultimoRelatorioSemanalCarregado) {
     alert("Carregue o relatório antes de exportar.");
@@ -1467,6 +1523,9 @@ function exportarRelatorioSemanalXlsx() {
     construirAbaPorRegiaoSemBloco("estrutural", "LATAM", colunasEstrutural, chavesEstrutural, estrutural, ordenarEstrutural, tituloTopo),
     "Estrutural LATAM"
   );
+  if ((report_json.paises_latam || []).length > 0) {
+    XLSX.utils.book_append_sheet(livro, construirAbaPaisesLatam(report_json.paises_latam, tituloTopo), "Países LATAM");
+  }
 
   // Nome do arquivo deixa claro o tipo de periodo e o intervalo exato -- pedido do Pierre pra
   // nao confundir relatorios de semanas/meses diferentes ao acumular varios downloads.
