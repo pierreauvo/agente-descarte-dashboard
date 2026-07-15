@@ -290,8 +290,12 @@
         <label>Campanha</label>
         <select id="filtroCampanha"><option value="">Todas</option></select>
       </div>
+      <div class="filtro-campo" id="filtroPaisCampo" style="display:none">
+        <label>País</label>
+        <select id="filtroPais"><option value="">Todos</option></select>
+      </div>
       <div class="filtro-campo">
-        <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
+        <button id="btnExportar" style="padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;" title="Exporta a lista de descartes/perdas filtrada nesta tela, em uma unica aba">⬇ Exportar lista (XLSX)</button>
       </div>
     </div>
 
@@ -406,7 +410,7 @@
     <div style="display:flex; gap:8px; margin-bottom:16px; align-items:center;">
       <button class="periodo-toggle-btn ativo" id="btnPeriodoSemanal" data-periodo="semanal">Semanal</button>
       <button class="periodo-toggle-btn" id="btnPeriodoMensal" data-periodo="mensal">Mensal</button>
-      <button id="btnExportarRelatorioSemanal" style="margin-left:auto;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;">⬇ Exportar XLSX</button>
+      <button id="btnExportarRelatorioSemanal" style="margin-left:auto;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:#1a2942;color:var(--text);font-size:13px;cursor:pointer;" title="Exporta o relatorio completo em 6 abas: Operacao/Qualidade/Estrutural x Brasil/LATAM">⬇ Exportar relatório (XLSX)</button>
     </div>
     <div class="alertas-resumo" id="relatorioSemanalResumo"></div>
     <section>
@@ -1525,6 +1529,18 @@ function popularFiltroCampanha(rows) {
   if (campanhas.includes(selecionado)) select.value = selecionado;
 }
 
+// Mesmo padrao, so relevante no LATAM (pedido do Pierre em 2026-07-15) -- populado a partir
+// da property "pais_del_lead" do HubSpot.
+function popularFiltroPais(rows) {
+  const select = document.getElementById("filtroPais");
+  const selecionado = select.value;
+  const paises = [...new Set(rows.map((r) => r.pais).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` +
+    paises.map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+  if (paises.includes(selecionado)) select.value = selecionado;
+}
+
 async function carregarDados() {
   const subtitle = document.getElementById("subtitle");
   const de = document.getElementById("dataDe").value;
@@ -1554,19 +1570,22 @@ async function carregarDados() {
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,pais,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
     popularFiltroResponsavel(rowsBase);
     popularFiltroCampanha(rowsBase);
+    popularFiltroPais(rowsBase);
     const motivoEscolhido = document.getElementById("filtroMotivo").value;
     const responsavelEscolhido = document.getElementById("filtroResponsavel").value;
     const campanhaEscolhida = document.getElementById("filtroCampanha").value;
+    const paisEscolhido = regiaoAtual === "LATAM" ? document.getElementById("filtroPais").value : "";
     const rows = rowsBase
       .filter((r) => !motivoEscolhido || r.motivo_registrado_micro === motivoEscolhido)
       .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido)
-      .filter((r) => !campanhaEscolhida || r.campanha_origem === campanhaEscolhida);
+      .filter((r) => !campanhaEscolhida || r.campanha_origem === campanhaEscolhida)
+      .filter((r) => !paisEscolhido || r.pais === paisEscolhido);
 
     // Aba "Motivos Incorretos": deriva do mesmo rowsBase (respeita data/equipe/etapa/
     // categoria), mas ignora os filtros de motivo/responsavel do Descartes -- e uma visao de
@@ -1690,6 +1709,8 @@ function exportarXlsx() {
     "Motivo de criação (macro)": r.motivo_criacao_macro ?? "",
     // Coluna separada pedida pelo Pierre: campanha de midia paga do lado do deal.
     "Campanha (mídia paga)": r.campanha_origem ?? "",
+    // So preenchida no LATAM (pedido do Pierre em 2026-07-15) -- Brasil fica vazio.
+    "País": r.pais ?? "",
     "Resumo da conversa (IA)": r.resumo_conversa ?? "",
     "Observação / causa raiz": r.observacao_causa_raiz ?? "",
     // Coluna separada pedida pelo Pierre: o que deveria ter sido feito.
@@ -1760,6 +1781,9 @@ function renderRegiaoToggle() {
     btn.classList.toggle("ativo", btn.dataset.regiao === regiaoAtual);
   });
   renderBotaoTraducao();
+  // Filtro de pais so faz sentido no LATAM (Brasil e um pais so) -- pedido do Pierre em
+  // 2026-07-15.
+  document.getElementById("filtroPaisCampo").style.display = regiaoAtual === "LATAM" ? "" : "none";
 }
 
 // Pedido do Pierre em 2026-07-10: botao evidente na visao LATAM pra traduzir a pagina
@@ -1837,6 +1861,7 @@ function main() {
   document.getElementById("filtroMotivo").addEventListener("change", carregarDados);
   document.getElementById("filtroResponsavel").addEventListener("change", carregarDados);
   document.getElementById("filtroCampanha").addEventListener("change", carregarDados);
+  document.getElementById("filtroPais").addEventListener("change", carregarDados);
   document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
