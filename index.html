@@ -162,9 +162,14 @@
   .table-wrap { overflow-x: auto; }
   .atividades-mini { font-size: 11px; color: var(--muted); }
   .detalhe-row td { background: #10121a; padding: 16px; }
+  /* Corrigido em 2026-07-15 (pedido do Pierre): transcricoes/mensagens longas com um token
+     sem espaco (ex: link de gravacao) forcavam a celula/tabela inteira a ficar mais larga
+     que a tela, cortando o texto sem barra de rolagem visivel. max-width fixo + overflow-wrap
+     garante que o texto sempre quebra dentro do bloco, em vez de expandir a tabela. */
+  .detalhe-conteudo { max-width: min(900px, 100%); }
   .detalhe-bloco { margin-bottom: 12px; }
   .detalhe-bloco h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
-  .detalhe-bloco p { margin: 0; font-size: 13px; white-space: pre-wrap; line-height: 1.5; }
+  .detalhe-bloco p { margin: 0; font-size: 13px; white-space: pre-wrap; line-height: 1.5; overflow-wrap: anywhere; }
   button.link-like {
     background: none; border: none; color: #6ea8fe; cursor: pointer; font-size: 12px;
     padding: 0; text-decoration: underline;
@@ -271,7 +276,6 @@
           <option value="OPERACAO">OPERACAO</option>
           <option value="ESTRUTURAL">ESTRUTURAL</option>
           <option value="QUALIDADE">QUALIDADE</option>
-          <option value="AUVOHUB">AUVOHUB</option>
         </select>
       </div>
       <div class="filtro-campo">
@@ -283,8 +287,16 @@
         <select id="filtroResponsavel"><option value="">Todos</option></select>
       </div>
       <div class="filtro-campo">
-        <label id="labelFiltroMotivo">Motivo de descarte</label>
+        <label id="labelFiltroMotivo">Motivo de descarte (micro)</label>
         <select id="filtroMotivo"><option value="">Todos</option></select>
+      </div>
+      <div class="filtro-campo">
+        <label id="labelFiltroMotivoMacro">Motivo de descarte (macro)</label>
+        <select id="filtroMotivoMacro"><option value="">Todos</option></select>
+      </div>
+      <div class="filtro-campo">
+        <label>Motivo de criação (macro)</label>
+        <select id="filtroMotivoCriacaoMacro"><option value="">Todos</option></select>
       </div>
       <div class="filtro-campo">
         <label>Campanha</label>
@@ -313,7 +325,7 @@
           <thead>
             <tr>
               <th id="thDataPrincipal">Data (Entrada MQL)</th><th>Empresa</th><th id="thResponsavel">SDR</th><th>Etapa</th><th>Categoria</th>
-              <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th>SLA (h)</th><th></th>
+              <th>Motivo registrado</th><th>Motivo de criação</th><th>Resumo</th><th>Atividades</th><th id="thSla">SLA (h)</th><th></th>
             </tr>
           </thead>
           <tbody id="tabelaDescartes"></tbody>
@@ -363,38 +375,51 @@
   <div class="tab-pane" id="tabSaudeDescartes">
     <div class="alertas-resumo" id="saudeDescartesResumo"></div>
     <div class="legenda-saude">
-      <h4>Como o score de saúde é calculado</h4>
+      <h4>Como a saúde é calculada</h4>
       <p>
         Cada descarte/perda combina <strong>duas perguntas separadas</strong> — "o lead era bom?" e
-        "o SDR/vendedor executou bem?" — sem deixar uma responder pela outra:
+        "o SDR/vendedor executou bem?" — e as colunas abaixo NÃO se misturam: são três métricas
+        independentes, cada uma sobre uma base diferente.
       </p>
       <ul>
         <li>
-          <span class="legenda-badge" style="background:#4ade80">100</span>
-          <strong>Motivo do descarte confirmado como válido</strong> (por regra objetiva ou por auditoria
-          da IA sobre o conteúdo real da conversa) — descarte correto, o score é máximo
-          <em>independente</em> de como foi a execução, porque não havia nada a fazer diferente.
+          <strong>% Descarte Válido</strong>: fração dos descartes do grupo cujo motivo foi confirmado
+          como objetivamente correto (por regra ou por auditoria da IA sobre o conteúdo real da
+          conversa) — não depende da execução, é sobre a qualidade do lead em si.
         </li>
         <li>
-          <span class="legenda-badge" style="background:#fbbf24">50-79</span><span class="legenda-badge" style="background:#f87171">&lt;50</span>
-          <strong>Motivo indica falha de execução (OPERACAO)</strong> e havia conteúdo real (call/nota/
-          mensagem) para a IA avaliar — o score é a média de 5 notas de 0 a 10 (discovery, geração de
-          dor, tratamento de objeção, execução de processo, condução), escalada para 0-100. Quanto mais
-          baixo, pior a execução — e maior o risco de ter descartado um lead que poderia ter sido
-          convertido.
+          <span class="legenda-badge" style="background:#4ade80">≥80</span><span class="legenda-badge" style="background:#fbbf24">50-79</span><span class="legenda-badge" style="background:#f87171">&lt;50</span>
+          <strong>Score de Execução</strong>: média de 5 notas de 0 a 10 (discovery, geração de dor,
+          tratamento de objeção, execução de processo, condução), SÓ entre os casos onde o motivo
+          indicava falha de execução (OPERAÇÃO) E havia conteúdo real pra IA avaliar. Não inclui os
+          descartes já confirmados como válidos — por isso não é uma média "inflada".
         </li>
         <li>
           <span class="legenda-badge" style="background:var(--muted)">Sem dados</span>
-          <strong>Não há informação suficiente para avaliar</strong> — motivo ambíguo (ex: "tentativas
-          esgotadas") mas sem nenhuma call/nota/mensagem real registrada. Não conta a favor nem contra;
-          é um sinal à parte de que falta documentação da interação.
+          <strong>Sem dados suficientes</strong>: quantos casos de motivo ambíguo (OPERAÇÃO) não
+          tinham nenhuma call/nota/mensagem real pra avaliar. Não conta a favor nem contra nenhuma das
+          duas métricas acima — é só um sinal de falta de documentação da interação.
         </li>
       </ul>
-      <p>
-        As colunas <strong>Avaliados</strong> e <strong>Sem dados suficientes</strong> mostram quantos
-        descartes do grupo caem em cada situação. Grupos (SDR/vendedor ou campanha) com menos de 3
-        descartes no período ficam de fora do ranking — amostra pequena demais para ser representativa.
-      </p>
+      <p>Grupos (SDR/vendedor ou campanha) com menos de 3 descartes no período ficam de fora do ranking.</p>
+    </div>
+    <div class="filtros" style="margin-bottom:16px;">
+      <div class="filtro-campo">
+        <label>Região</label>
+        <select id="filtroSaudeRegiao">
+          <option value="">Todas</option>
+          <option value="Brasil">Brasil</option>
+          <option value="LATAM">LATAM</option>
+        </select>
+      </div>
+      <div class="filtro-campo">
+        <label>SDR/Vendedor</label>
+        <select id="filtroSaudePessoa"><option value="">Todos</option></select>
+      </div>
+      <div class="filtro-campo">
+        <label>Campanha</label>
+        <select id="filtroSaudeCampanha"><option value="">Todas</option></select>
+      </div>
     </div>
     <section>
       <h2>Saúde dos descartes por SDR/Vendedor</h2>
@@ -508,20 +533,31 @@ function formatAtividades(detalhe) {
   return partes.length ? partes.join(", ") : "sem atividade";
 }
 
+// SLA de 4h nao faz sentido no LATAM (pedido do Pierre em 2026-07-15): tem paises ate 5h
+// de fuso na frente do Brasil, entao um lead convertido as 20h no Mexico so pode ser
+// atendido no dia seguinte, quando ja e madrugada la -- o SLA de 4h nunca seria cumprido
+// pra esses casos, e o criterio correto variaria por pais (complexo demais pra valer a pena
+// agora). Os cards de SLA somem inteiramente na visao LATAM em vez de mostrar um numero
+// que nao tem leitura correta.
 function renderCards(rows) {
   const cards = document.getElementById("cards");
   const total = rows.length;
-  const comSla = rows.filter((r) => r.sla_primeira_ligacao_horas !== null);
-  const dentroSla = comSla.filter((r) => r.dentro_sla_4h === true).length;
-  const slaMedia = comSla.length
-    ? Math.round((comSla.reduce((a, r) => a + r.sla_primeira_ligacao_horas, 0) / comSla.length) * 100) / 100
-    : null;
   const flags = rows.filter((r) => r.flag_motivo_incorreto).length;
+
+  const cardsSla = regiaoAtual === "LATAM" ? "" : (() => {
+    const comSla = rows.filter((r) => r.sla_primeira_ligacao_horas !== null);
+    const dentroSla = comSla.filter((r) => r.dentro_sla_4h === true).length;
+    const slaMedia = comSla.length
+      ? Math.round((comSla.reduce((a, r) => a + r.sla_primeira_ligacao_horas, 0) / comSla.length) * 100) / 100
+      : null;
+    return `
+    <div class="card"><div class="label">SLA medio (horas uteis)</div><div class="value">${slaMedia ?? "—"}</div></div>
+    <div class="card"><div class="label">Dentro do SLA (4h)</div><div class="value">${pct(dentroSla, comSla.length)}%</div></div>`;
+  })();
 
   cards.innerHTML = `
     <div class="card"><div class="label">Total de descartes</div><div class="value">${total}</div></div>
-    <div class="card"><div class="label">SLA medio (horas uteis)</div><div class="value">${slaMedia ?? "—"}</div></div>
-    <div class="card"><div class="label">Dentro do SLA (4h)</div><div class="value">${pct(dentroSla, comSla.length)}%</div></div>
+    ${cardsSla}
     <div class="card"><div class="label">Motivos incorretos</div><div class="value">${flags}</div></div>
   `;
 }
@@ -529,7 +565,7 @@ function renderCards(rows) {
 function renderCategoriaBars(rows) {
   const el = document.getElementById("categoriaBars");
   const total = rows.length;
-  const categorias = ["OPERACAO", "ESTRUTURAL", "QUALIDADE", "AUVOHUB"];
+  const categorias = ["OPERACAO", "ESTRUTURAL", "QUALIDADE"];
   const entries = categorias
     .map((cat) => [cat, rows.filter((r) => r.classificacao === cat).length])
     .filter(([, count]) => count > 0);
@@ -673,20 +709,22 @@ function renderTabela(rows) {
         <td>${escapeHtml(r.motivo_criacao_micro) || "—"}</td>
         <td class="atividades-mini">${escapeHtml(resumoPreview(r))}</td>
         <td class="atividades-mini">${formatAtividades(r.atividades_detalhe)}</td>
-        <td>${r.sla_primeira_ligacao_horas ?? "—"}</td>
+        <td>${regiaoAtual === "LATAM" ? "N/A" : r.sla_primeira_ligacao_horas ?? "—"}</td>
         <td>${r.link_hubspot ? `<a href="${r.link_hubspot}" target="_blank" rel="noopener">HubSpot →</a>` : ""} <span style="color:var(--muted)">▾ detalhes</span></td>
       </tr>
       <tr class="detalhe-row" id="detalhe-${i}" style="display:none">
         <td colspan="11">
-          <div class="detalhe-bloco"><h4>Data de Entrada (MQL)</h4><p>${escapeHtml(r.data_mql) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Data de ${rotuloResultado().toLowerCase()}</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
-          ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
-          ${r.resumo_mensagens ? `<div class="detalhe-bloco"><h4>Resumo das mensagens (WhatsApp/Email)</h4><p>${escapeHtml(r.resumo_mensagens)}</p></div>` : ""}
-          ${r.transcricao_mensagens ? `<div class="detalhe-bloco"><h4>Transcricao de mensagens</h4><p>${escapeHtml(r.transcricao_mensagens)}</p></div>` : ""}
-          ${r.motivo_criacao_macro || r.campanha_origem ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Fonte: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}${r.campanha_origem ? `\nCampanha: ${escapeHtml(r.campanha_origem)}` : ""}</p></div>` : ""}
+          <div class="detalhe-conteudo">
+            <div class="detalhe-bloco"><h4>Data de Entrada (MQL)</h4><p>${escapeHtml(r.data_mql) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Data de ${rotuloResultado().toLowerCase()}</h4><p>${escapeHtml(r.data_descarte) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Observacao / causa raiz</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
+            ${r.transcricao_ligacoes ? `<div class="detalhe-bloco"><h4>Transcricao de ligacoes</h4><p>${escapeHtml(r.transcricao_ligacoes)}</p></div>` : ""}
+            ${r.resumo_mensagens ? `<div class="detalhe-bloco"><h4>Resumo das mensagens (WhatsApp/Email)</h4><p>${escapeHtml(r.resumo_mensagens)}</p></div>` : ""}
+            ${r.transcricao_mensagens ? `<div class="detalhe-bloco"><h4>Transcricao de mensagens</h4><p>${escapeHtml(r.transcricao_mensagens)}</p></div>` : ""}
+            ${r.motivo_criacao_macro || r.campanha_origem ? `<div class="detalhe-bloco"><h4>Origem do deal</h4><p>Fonte: ${escapeHtml(r.motivo_criacao_macro) || "—"} / ${escapeHtml(r.motivo_criacao_micro) || "—"}${r.campanha_origem ? `\nCampanha: ${escapeHtml(r.campanha_origem)}` : ""}</p></div>` : ""}
+          </div>
         </td>
       </tr>
     `);
@@ -768,11 +806,13 @@ function renderMotivosIncorretos(rows) {
       </tr>
       <tr class="detalhe-row" id="detalheMI-${i}" style="display:none">
         <td colspan="8">
-          <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Por que o motivo registrado esta errado / qual deveria ser</h4><p>${escapeHtml(r.flag_motivo_incorreto_razao) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Observacao / causa raiz completa</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
-          <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
-          ${r.link_hubspot ? `<div class="detalhe-bloco"><a class="btn-corrigir" href="${r.link_hubspot}" target="_blank" rel="noopener">Corrigir no HubSpot →</a></div>` : ""}
+          <div class="detalhe-conteudo">
+            <div class="detalhe-bloco"><h4>Resumo da conversa (IA)</h4><p>${escapeHtml(r.resumo_conversa) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Por que o motivo registrado esta errado / qual deveria ser</h4><p>${escapeHtml(r.flag_motivo_incorreto_razao) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Observacao / causa raiz completa</h4><p>${escapeHtml(r.observacao_causa_raiz) || "—"}</p></div>
+            <div class="detalhe-bloco"><h4>Recomendacao — o que deveria ter sido feito</h4><p>${escapeHtml(r.recomendacao_acao) || "—"}</p></div>
+            ${r.link_hubspot ? `<div class="detalhe-bloco"><a class="btn-corrigir" href="${r.link_hubspot}" target="_blank" rel="noopener">Corrigir no HubSpot →</a></div>` : ""}
+          </div>
         </td>
       </tr>
     `);
@@ -938,9 +978,16 @@ function saudeDescarte(r) {
   return (scores.reduce((a, b) => a + b, 0) / scores.length) * 10;
 }
 
-// Agrupa por SDR ou por campanha (chaveFn) e calcula a media do score de saude entre os
-// descartes AVALIAVEIS (com dado suficiente) de cada grupo -- grupos com menos de 3
-// descartes no periodo ficam de fora do ranking, pouco representativos.
+// Agrupa por SDR ou por campanha (chaveFn) e calcula TRES metricas SEPARADAS (pedido do
+// Pierre em 2026-07-15: "voce juntou dois criterios em um so" -- o score antigo misturava os
+// descartes ja confirmados como validos (que sempre valiam 100) com o score de execucao real,
+// inflando a media. Agora:
+// - pctValido: fracao dos descartes do grupo com motivo confirmado como objetivamente correto
+//   (classificacao != OPERACAO) -- sobre qualidade do LEAD, nao depende de execucao.
+// - scoreExecucao: media dos _saude SO entre os casos OPERACAO com conteudo real avaliado --
+//   nao inclui os "validos" (100), entao reflete so a execucao de verdade.
+// - semDados: contagem de casos OPERACAO sem conteudo real pra avaliar (nem entra nas duas
+//   metricas acima).
 function agruparSaude(rowsComScore, chaveFn) {
   const grupos = {};
   rowsComScore.forEach((r) => {
@@ -950,12 +997,21 @@ function agruparSaude(rowsComScore, chaveFn) {
   });
   return Object.entries(grupos)
     .map(([chave, itens]) => {
-      const avaliados = itens.filter((r) => r._saude !== null);
-      const media = avaliados.length > 0 ? avaliados.reduce((soma, r) => soma + r._saude, 0) / avaliados.length : null;
-      return { chave, total: itens.length, avaliados: avaliados.length, semDados: itens.length - avaliados.length, media };
+      const validos = itens.filter((r) => r.classificacao !== "OPERACAO");
+      const operacao = itens.filter((r) => r.classificacao === "OPERACAO");
+      const operacaoComScore = operacao.filter((r) => r._saude !== null);
+      const scoreExecucao =
+        operacaoComScore.length > 0 ? operacaoComScore.reduce((soma, r) => soma + r._saude, 0) / operacaoComScore.length : null;
+      return {
+        chave,
+        total: itens.length,
+        pctValido: (validos.length / itens.length) * 100,
+        scoreExecucao,
+        semDados: operacao.length - operacaoComScore.length,
+      };
     })
     .filter((g) => g.total >= 3)
-    .sort((a, b) => (a.media ?? 999) - (b.media ?? 999)); // pior primeiro -- prioriza quem precisa de atencao
+    .sort((a, b) => (a.scoreExecucao ?? 999) - (b.scoreExecucao ?? 999)); // pior execucao primeiro
 }
 
 function corSaude(media) {
@@ -979,16 +1035,16 @@ function tabelaSaudeHtml(grupos, colunaLabel, labelVazio) {
     <tr>
       <td>${escapeHtml(g.chave)}</td>
       <td>${g.total}</td>
-      <td>${g.avaliados}</td>
+      <td>${g.pctValido.toFixed(0)}%</td>
+      <td style="font-weight:700; color:${corSaude(g.scoreExecucao)}">${g.scoreExecucao === null ? "—" : g.scoreExecucao.toFixed(0)}</td>
       <td>${g.semDados}</td>
-      <td style="font-weight:700; color:${corSaude(g.media)}">${g.media === null ? "Sem dados" : g.media.toFixed(0)}</td>
     </tr>`
     )
     .join("");
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>${colunaLabel}</th><th>Descartes</th><th>Avaliados</th><th>Sem dados suficientes</th><th>Score de saúde</th></tr></thead>
+        <thead><tr><th>${colunaLabel}</th><th>Descartes</th><th>% Descarte Válido</th><th>Score de Execução</th><th>Sem dados suficientes</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
     </div>`;
@@ -997,10 +1053,13 @@ function tabelaSaudeHtml(grupos, colunaLabel, labelVazio) {
 // Blocos por Regiao (Brasil/LATAM) e, dentro de cada regiao, por Equipe (SDR/Vendas) --
 // pedido do Pierre em 2026-07-12: a visao consolidada nao deve depender do toggle
 // Equipe/Regiao da tela (que so afeta a aba Descartes), e sim mostrar as 4 combinacoes juntas.
+// Cada bloco so aparece se o filtro de regiao (ver filtroSaudeRegiao) permitir.
 function renderBlocosSaude(containerId, rowsComScore, colunaLabel, chaveFn, labelVazio) {
   const el = document.getElementById(containerId);
+  const regiaoFiltro = document.getElementById("filtroSaudeRegiao").value;
   let html = "";
   ["Brasil", "LATAM"].forEach((regiao) => {
+    if (regiaoFiltro && regiaoFiltro !== regiao) return;
     const rowsRegiao = rowsComScore.filter((r) => r.regiao === regiao);
     if (rowsRegiao.length === 0) return;
     html += `<h3 class="bloco-equipe-titulo">${regiao}</h3>`;
@@ -1014,14 +1073,44 @@ function renderBlocosSaude(containerId, rowsComScore, colunaLabel, chaveFn, labe
   el.innerHTML = html || `<div class="empty">Sem dados no período.</div>`;
 }
 
+// Populam os dropdowns de pessoa/campanha a partir dos dados JA carregados (sem filtro de
+// pessoa/campanha aplicado ainda) -- mesmo padrao dos filtros da aba Descartes.
+function popularFiltrosSaude(rows) {
+  const selectPessoa = document.getElementById("filtroSaudePessoa");
+  const selecionadoPessoa = selectPessoa.value;
+  const pessoas = [...new Set(rows.map((r) => r.sdr).filter(Boolean))].sort();
+  selectPessoa.innerHTML = `<option value="">Todos</option>` + pessoas.map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+  if (pessoas.includes(selecionadoPessoa)) selectPessoa.value = selecionadoPessoa;
+
+  const selectCampanha = document.getElementById("filtroSaudeCampanha");
+  const selecionadoCampanha = selectCampanha.value;
+  const campanhas = [...new Set(rows.map((r) => r.campanha_origem).filter(Boolean))].sort();
+  selectCampanha.innerHTML =
+    `<option value="">Todas</option>` + campanhas.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  if (campanhas.includes(selecionadoCampanha)) selectCampanha.value = selecionadoCampanha;
+}
+
+let saudeDescartesRowsBase = [];
+
 function renderSaudeDescartes(rowsConsolidadas) {
+  saudeDescartesRowsBase = rowsConsolidadas;
+  popularFiltrosSaude(rowsConsolidadas);
+
+  const regiaoEscolhida = document.getElementById("filtroSaudeRegiao").value;
+  const pessoaEscolhida = document.getElementById("filtroSaudePessoa").value;
+  const campanhaEscolhida = document.getElementById("filtroSaudeCampanha").value;
+  const rows = rowsConsolidadas
+    .filter((r) => !regiaoEscolhida || r.regiao === regiaoEscolhida)
+    .filter((r) => !pessoaEscolhida || r.sdr === pessoaEscolhida)
+    .filter((r) => !campanhaEscolhida || r.campanha_origem === campanhaEscolhida);
+
   const resumoEl = document.getElementById("saudeDescartesResumo");
-  const rowsComScore = rowsConsolidadas.map((r) => ({ ...r, _saude: saudeDescarte(r) }));
+  const rowsComScore = rows.map((r) => ({ ...r, _saude: saudeDescarte(r) }));
 
   const avaliaveisTotal = rowsComScore.filter((r) => r._saude !== null).length;
   resumoEl.innerHTML = `
-    <span><strong>${rowsConsolidadas.length}</strong> descarte(s)/perda(s) no período (Brasil + LATAM, SDR + Vendas)</span>
-    <span><strong>${avaliaveisTotal}</strong> com dado suficiente para avaliar saúde (${rowsConsolidadas.length > 0 ? ((avaliaveisTotal / rowsConsolidadas.length) * 100).toFixed(0) : 0}%)</span>
+    <span><strong>${rows.length}</strong> descarte(s)/perda(s) no período</span>
+    <span><strong>${avaliaveisTotal}</strong> com dado suficiente para avaliar saúde (${rows.length > 0 ? ((avaliaveisTotal / rows.length) * 100).toFixed(0) : 0}%)</span>
   `;
 
   renderBlocosSaude("saudeDescartesSdrContainer", rowsComScore, "SDR/Vendedor", (r) => r.sdr, "SDR/Vendedor");
@@ -1031,13 +1120,25 @@ function renderSaudeDescartes(rowsConsolidadas) {
 // Independente do toggle Equipe/Regiao e dos demais filtros da aba Descartes -- so respeita
 // o periodo (De/Ate) selecionado, ja que e uma visao consolidada de saude, nao uma lista
 // filtravel deal a deal.
+// BUG REAL descoberto em 2026-07-15 (Pierre reportou totais absurdos, ex: 506 no Brasil SDR
+// quando o periodo so tinha ~200 e poucos): esta consulta filtrava TUDO por data_descarte,
+// mas o resto do dashboard usa data_mql pro SDR (ver campoDataPrincipal()) -- negociacoes de
+// Vendas demoram, mas descartes de SDR tem MQL e descarte proximos, entao usar data_descarte
+// pra SDR trazia deals cujo MQL era de meses antes, inflando o total muito alem do que
+// aparece como "total de descartes" no resto da tela. Agora usa o MESMO criterio de data por
+// equipe que o resto do dashboard (data_mql pro SDR/descarte, data_descarte pra Vendas/perda).
 async function carregarSaudeDescartes() {
   const de = document.getElementById("dataDe").value;
   const ate = document.getElementById("dataAte").value;
+  const campos = "tipo,regiao,pais,sdr,campanha_origem,classificacao,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao";
   try {
-    const rows = await supabaseGet(
-      `discard_analyses?select=tipo,regiao,sdr,campanha_origem,classificacao,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&data_descarte=gte.${de}&data_descarte=lte.${ate}&elegivel_relatorio_hubspot=eq.true&limit=5000`
-    );
+    const [rowsSdr, rowsVendas] = await Promise.all([
+      supabaseGet(`discard_analyses?select=${campos}&tipo=eq.descarte&data_mql=gte.${de}&data_mql=lte.${ate}&elegivel_relatorio_hubspot=eq.true&limit=5000`),
+      supabaseGet(`discard_analyses?select=${campos}&tipo=eq.perda&data_descarte=gte.${de}&data_descarte=lte.${ate}&elegivel_relatorio_hubspot=eq.true&limit=5000`),
+    ]);
+    // AUVOHUB fora do escopo desta analise (confirmado com o Pierre em 2026-07-15) -- fora do
+    // fluxo normal de venda nova (upsell), so confunde misturado com Operacao/Qualidade/Estrutural.
+    const rows = [...rowsSdr, ...rowsVendas].filter((r) => r.classificacao !== "AUVOHUB");
     renderSaudeDescartes(rows);
   } catch (err) {
     document.getElementById("saudeDescartesResumo").innerHTML = `<span>Erro ao carregar: ${err.message}</span>`;
@@ -1562,6 +1663,30 @@ function popularFiltroMotivo(rows) {
   if (motivos.includes(selecionado)) select.value = selecionado;
 }
 
+// Mesmo padrao do filtro de motivo (micro), mas pro campo macro -- pedido do Pierre em
+// 2026-07-15 pra poder flagar/filtrar por motivo de descarte macro tambem.
+function popularFiltroMotivoMacro(rows) {
+  const select = document.getElementById("filtroMotivoMacro");
+  const selecionado = select.value;
+  const motivos = [...new Set(rows.map((r) => r.motivo_registrado_macro).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` +
+    motivos.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  if (motivos.includes(selecionado)) select.value = selecionado;
+}
+
+// Mesmo padrao, pro motivo de CRIACAO macro (origem do lead, ex: "Midia paga", "REC") --
+// pedido do Pierre em 2026-07-15.
+function popularFiltroMotivoCriacaoMacro(rows) {
+  const select = document.getElementById("filtroMotivoCriacaoMacro");
+  const selecionado = select.value;
+  const motivos = [...new Set(rows.map((r) => r.motivo_criacao_macro).filter(Boolean))].sort();
+  select.innerHTML =
+    `<option value="">Todos</option>` +
+    motivos.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  if (motivos.includes(selecionado)) select.value = selecionado;
+}
+
 // Mesmo padrao do filtro de motivo: populado a partir dos nomes presentes no periodo/etapa/
 // categoria atual. O rotulo (label + opcao "Todos") muda entre "SDR" e "Vendedor" conforme a
 // equipe ativa, ja que o campo `sdr` guarda o vendedor na aba Vendas (pedido do Pierre).
@@ -1618,6 +1743,9 @@ async function carregarDados() {
     const etapasFiltro = etapaEscolhida ? [etapaEscolhida] : EQUIPES[equipeAtual];
     const filtroEtapa = [`etapa_descarte=in.(${etapasFiltro.map((e) => `"${e}"`).join(",")})`];
     const filtroElegibilidade = [`elegivel_relatorio_hubspot=eq.true`];
+    // AUVOHUB fora do escopo de venda nova (upsell) -- confirmado com o Pierre em 2026-07-15,
+    // continua sendo detectado/salvo no banco mas nunca aparece nas visoes do time.
+    const filtroSemAuvohub = [`classificacao=neq.AUVOHUB`];
     // SDR = descartes, Vendas = perdas (Apresentacao da Solucao/Negociacao usam motivo de
     // perda, nao motivo de descarte) -- pedido do Pierre em 2026-07-09.
     const filtroTipo = [`tipo=eq.${equipeAtual === "Vendas" ? "perda" : "descarte"}`];
@@ -1629,19 +1757,25 @@ async function carregarDados() {
     // abaixo, para que os dropdowns continuem mostrando todas as opcoes possiveis do
     // periodo/etapa/categoria atual.
     const rowsBase = await supabaseGet(
-      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,pais,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
+      `discard_analyses?select=data_mql,data_descarte,empresa,sdr,etapa_descarte,classificacao,motivo_registrado_micro,motivo_registrado_macro,motivo_criacao_micro,motivo_criacao_macro,campanha_origem,pais,atividades_detalhe,sla_primeira_ligacao_horas,dentro_sla_4h,flag_motivo_incorreto,flag_motivo_incorreto_razao,resumo_conversa,observacao_causa_raiz,recomendacao_acao,transcricao_ligacoes,transcricao_mensagens,resumo_mensagens,link_hubspot,score_discovery,score_geracao_dor,score_tratamento_objecao,score_execucao_processo,score_conducao&${[...filtrosDataMql, ...filtroEtapa, ...filtroCategoria, ...filtroElegibilidade, ...filtroSemAuvohub, ...filtroTipo, ...filtroRegiao].join("&")}&order=${campoData}.desc&limit=2000`
     );
 
     popularFiltroMotivo(rowsBase);
+    popularFiltroMotivoMacro(rowsBase);
+    popularFiltroMotivoCriacaoMacro(rowsBase);
     popularFiltroResponsavel(rowsBase);
     popularFiltroCampanha(rowsBase);
     popularFiltroPais(rowsBase);
     const motivoEscolhido = document.getElementById("filtroMotivo").value;
+    const motivoMacroEscolhido = document.getElementById("filtroMotivoMacro").value;
+    const motivoCriacaoMacroEscolhido = document.getElementById("filtroMotivoCriacaoMacro").value;
     const responsavelEscolhido = document.getElementById("filtroResponsavel").value;
     const campanhaEscolhida = document.getElementById("filtroCampanha").value;
     const paisEscolhido = regiaoAtual === "LATAM" ? document.getElementById("filtroPais").value : "";
     const rows = rowsBase
       .filter((r) => !motivoEscolhido || r.motivo_registrado_micro === motivoEscolhido)
+      .filter((r) => !motivoMacroEscolhido || r.motivo_registrado_macro === motivoMacroEscolhido)
+      .filter((r) => !motivoCriacaoMacroEscolhido || r.motivo_criacao_macro === motivoCriacaoMacroEscolhido)
       .filter((r) => !responsavelEscolhido || r.sdr === responsavelEscolhido)
       .filter((r) => !campanhaEscolhida || r.campanha_origem === campanhaEscolhida)
       .filter((r) => !paisEscolhido || r.pais === paisEscolhido);
@@ -1775,8 +1909,10 @@ function exportarXlsx() {
     // Coluna separada pedida pelo Pierre: o que deveria ter sido feito.
     "Recomendação de ação": r.recomendacao_acao ?? "",
     "Atividades": formatAtividades(r.atividades_detalhe),
-    "SLA (horas úteis)": r.sla_primeira_ligacao_horas ?? "",
-    "Dentro do SLA (4h)": r.dentro_sla_4h === true ? "Sim" : r.dentro_sla_4h === false ? "Não" : "",
+    // SLA de 4h nao se aplica no LATAM (pedido do Pierre em 2026-07-15, fusos diferentes) --
+    // exportado vazio pra nao confundir.
+    "SLA (horas úteis)": regiaoAtual === "LATAM" ? "N/A" : r.sla_primeira_ligacao_horas ?? "",
+    "Dentro do SLA (4h)": regiaoAtual === "LATAM" ? "N/A" : r.dentro_sla_4h === true ? "Sim" : r.dentro_sla_4h === false ? "Não" : "",
     "Motivo incorreto?": r.flag_motivo_incorreto ? "Sim" : "Não",
     "Link HubSpot": r.link_hubspot ?? "",
     "Transcrição de ligações": r.transcricao_ligacoes ?? "",
@@ -1843,6 +1979,10 @@ function renderRegiaoToggle() {
   // Filtro de pais so faz sentido no LATAM (Brasil e um pais so) -- pedido do Pierre em
   // 2026-07-15.
   document.getElementById("filtroPaisCampo").style.display = regiaoAtual === "LATAM" ? "" : "none";
+  // SLA de 4h nao se aplica no LATAM (fusos horarios diferentes entre paises) -- pedido do
+  // Pierre em 2026-07-15.
+  const thSla = document.getElementById("thSla");
+  if (thSla) thSla.textContent = regiaoAtual === "LATAM" ? "SLA (N/A)" : "SLA (h)";
 }
 
 // Pedido do Pierre em 2026-07-10: botao evidente na visao LATAM pra traduzir a pagina
@@ -1918,9 +2058,14 @@ function main() {
   document.getElementById("filtroCategoria").addEventListener("change", carregarDados);
   document.getElementById("filtroEtapa").addEventListener("change", carregarDados);
   document.getElementById("filtroMotivo").addEventListener("change", carregarDados);
+  document.getElementById("filtroMotivoMacro").addEventListener("change", carregarDados);
+  document.getElementById("filtroMotivoCriacaoMacro").addEventListener("change", carregarDados);
   document.getElementById("filtroResponsavel").addEventListener("change", carregarDados);
   document.getElementById("filtroCampanha").addEventListener("change", carregarDados);
   document.getElementById("filtroPais").addEventListener("change", carregarDados);
+  ["filtroSaudeRegiao", "filtroSaudePessoa", "filtroSaudeCampanha"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => renderSaudeDescartes(saudeDescartesRowsBase));
+  });
   document.getElementById("btnExportar").addEventListener("click", exportarXlsx);
   document.querySelectorAll("#equipeToggle button").forEach((btn) => {
     btn.addEventListener("click", () => selecionarEquipe(btn.dataset.equipe));
