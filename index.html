@@ -1222,6 +1222,7 @@ function renderCardSintese(g, tipo) {
            <span>Impacto de mídia: <strong>${formatarPct(g.pct_impacto_midia)}</strong></span>
            <span>Impacto de descarte: <strong>${formatarPct(g.pct_impacto_descarte)}</strong></span>
            <span>Total de descartes da campanha: <strong>${g.qtde_total_descarte}</strong></span>
+           <span title="Descartes da campanha no mes / MQLs que ELA GEROU no mesmo mes. Pode passar de 100% quando a campanha gerou pouco MQL novo no mes mas ainda esta 'limpando' descartes de leads mais antigos (backlog) -- nao e erro de calculo, e sinal de que o volume de descarte supera o volume de entrada atual dessa campanha.">% Descarte sobre MQL${g.mesReferenciaLabel ? ` (${escapeHtml(g.mesReferenciaLabel)})` : ""}: <strong>${formatarPct(g.pct_descarte_sobre_mql_mes)}</strong></span>
          </div>`
       : "";
   return `
@@ -1351,7 +1352,12 @@ async function carregarRelatorioSemanal() {
     renderSinteseSecao("relatorioOperacao", report_json.operacao, "operacao", "equipe");
     // Qualidade e Estrutural agrupam por REGIAO no dashboard agora, igual a exportacao XLSX
     // (antes agrupavam por equipe) -- pedido do Pierre pra manter as duas visoes consistentes.
-    renderSinteseSecao("relatorioQualidade", report_json.qualidade, "qualidade", "regiao");
+    // mesReferenciaLabel anexado em cada grupo (pedido do Pierre em 2026-07-15: deixar claro
+    // de qual mes vem o % de descarte sobre MQL, ja que pode ser diferente do periodo do
+    // proprio relatorio quando semanal).
+    const mesReferenciaLabel = report_json.mes_referencia ? mesLabel(`${report_json.mes_referencia}-01`) : "";
+    const qualidadeComMes = (report_json.qualidade || []).map((g) => ({ ...g, mesReferenciaLabel }));
+    renderSinteseSecao("relatorioQualidade", qualidadeComMes, "qualidade", "regiao");
     // Relatorios gerados antes de 2026-07-10 nao tem o campo "estrutural" -- trata como
     // vazio em vez de quebrar (report_json.estrutural pode ser undefined nesses casos).
     const estrutural = report_json.estrutural || [];
@@ -1487,6 +1493,7 @@ function linhaDeGrupo(tipo, colunasChaves, g) {
     pct_impacto_midia: formatarPct(g.pct_impacto_midia),
     pct_impacto_descarte: formatarPct(g.pct_impacto_descarte),
     qtde_total_descarte: g.qtde_total_descarte ?? "",
+    pct_descarte_sobre_mql_mes: formatarPct(g.pct_descarte_sobre_mql_mes),
   };
   return colunasChaves.map((chave) => valoresPossiveis[chave]);
 }
@@ -1560,6 +1567,10 @@ function exportarRelatorioSemanalXlsx() {
   const qualidade = report_json.qualidade || [];
   const estrutural = report_json.estrutural || [];
 
+  // Mes calendario usado como base do % de descarte sobre MQL do mes -- pode ser diferente
+  // do periodo do proprio relatorio (semanal cobre so 7 dias) -- pedido do Pierre em
+  // 2026-07-15 pra deixar claro de onde vem esse numero.
+  const mesReferenciaLabelXlsx = report_json.mes_referencia ? mesLabel(`${report_json.mes_referencia}-01`) : "";
   const colunasQualidade = [
     { titulo: "Equipe", largura: 10, estilo: ESTILO_CENTRO },
     { titulo: "Campanha", largura: 32, estilo: ESTILO_TEXTO },
@@ -1570,6 +1581,9 @@ function exportarRelatorioSemanalXlsx() {
     { titulo: "% Impacto de Mídia", largura: 16, estilo: ESTILO_CENTRO },
     { titulo: "% Impacto de Descarte", largura: 16, estilo: ESTILO_CENTRO },
     { titulo: "Qtde Total de Descarte", largura: 16, estilo: ESTILO_CENTRO },
+    // Pedido do Pierre em 2026-07-15: % de descarte da campanha sobre o total de MQL QUE
+    // ELA GEROU no mes (nao sobre o total de midia da regiao, diferente das colunas acima).
+    { titulo: `% Descarte s/ MQL${mesReferenciaLabelXlsx ? ` (${mesReferenciaLabelXlsx})` : " do mês"}`, largura: 20, estilo: ESTILO_CENTRO },
     { titulo: "Síntese", largura: 75, estilo: ESTILO_TEXTO },
     { titulo: "Exemplos", largura: 40, estilo: ESTILO_TEXTO },
     { titulo: "Plano de Ação", largura: 40, estilo: ESTILO_PLANO_ACAO },
@@ -1581,6 +1595,7 @@ function exportarRelatorioSemanalXlsx() {
     "pct_impacto_midia",
     "pct_impacto_descarte",
     "qtde_total_descarte",
+    "pct_descarte_sobre_mql_mes",
     "sintese",
     "exemplos",
     "plano",
